@@ -41,10 +41,10 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Prepare Signing Keystore
+      - name: Prepare Signing Keystores
         run: |
-          # If a release keystore does not exist, generate one for GitHub Actions release signing
-          if [ ! -f "my-upload-key.jks" ]; then
+          # Generate release keystore in both root and app directory so Gradle finds it regardless of path resolution
+          if [ ! -f "my-upload-key.jks" ] && [ ! -f "app/my-upload-key.jks" ]; then
             keytool -genkey -v -keystore my-upload-key.jks \
               -alias upload \
               -keyalg RSA \
@@ -53,9 +53,15 @@ jobs:
               -storepass android \
               -keypass android \
               -dname "CN=PlanetChecker, OU=Cinema, O=Planet, L=RishonLeZion, C=IL"
+            cp my-upload-key.jks app/my-upload-key.jks
+          elif [ -f "my-upload-key.jks" ]; then
+            cp -f my-upload-key.jks app/my-upload-key.jks
+          elif [ -f "app/my-upload-key.jks" ]; then
+            cp -f app/my-upload-key.jks my-upload-key.jks
           fi
-          # Also generate a debug keystore if not present
-          if [ ! -f "debug.keystore" ]; then
+
+          # Also generate debug keystore in both root and app directory
+          if [ ! -f "debug.keystore" ] && [ ! -f "app/debug.keystore" ]; then
             keytool -genkey -v -keystore debug.keystore \
               -alias androiddebugkey \
               -keyalg RSA \
@@ -64,6 +70,11 @@ jobs:
               -storepass android \
               -keypass android \
               -dname "CN=Android Debug, O=Android, C=US"
+            cp debug.keystore app/debug.keystore
+          elif [ -f "debug.keystore" ]; then
+            cp -f debug.keystore app/debug.keystore
+          elif [ -f "app/debug.keystore" ]; then
+            cp -f app/debug.keystore debug.keystore
           fi
 
       - name: Grant Execute Permission to gradlew
@@ -73,7 +84,7 @@ jobs:
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
-          KEYSTORE_PATH: my-upload-key.jks
+          KEYSTORE_PATH: ${{ github.workspace }}/app/my-upload-key.jks
         run: ./gradlew assembleRelease assembleDebug --no-daemon
 
       - name: Collect and Rename APKs

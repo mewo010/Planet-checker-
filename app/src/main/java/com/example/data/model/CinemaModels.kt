@@ -52,22 +52,22 @@ enum class CrowdLevel(val label: String, val color: Color, val progressColor: Co
 
 @JsonClass(generateAdapter = true)
 data class RawScreening(
-    @Json(name = "title") val title: String = "",
-    @Json(name = "room") val room: String = "",
-    @Json(name = "start") val start: String = "",
-    @Json(name = "end") val end: String = "",
-    @Json(name = "availabilityRatio") val availabilityRatio: Float? = null
+    @param:Json(name = "title") val title: String = "",
+    @param:Json(name = "room") val room: String = "",
+    @param:Json(name = "start") val start: String = "",
+    @param:Json(name = "end") val end: String = "",
+    @param:Json(name = "availabilityRatio") val availabilityRatio: Float? = null
 )
 
 @JsonClass(generateAdapter = true)
 data class FirstScheduleResponse(
-    @Json(name = "date") val date: String? = null,
-    @Json(name = "screenings") val screenings: List<RawScreening> = emptyList()
+    @param:Json(name = "date") val date: String? = null,
+    @param:Json(name = "screenings") val screenings: List<RawScreening> = emptyList()
 )
 
 @JsonClass(generateAdapter = true)
 data class HourlyScheduleResponse(
-    @Json(name = "screenings") val screenings: List<RawScreening> = emptyList()
+    @param:Json(name = "screenings") val screenings: List<RawScreening> = emptyList()
 )
 
 data class Screening(
