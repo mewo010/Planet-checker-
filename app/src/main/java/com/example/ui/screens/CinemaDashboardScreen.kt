@@ -50,6 +50,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.CinemaTab
 import com.example.data.model.CinemaUiState
 import com.example.data.repository.CinemaRepository
+import com.example.ui.components.AudienceBreakdownDialog
 import com.example.ui.components.CinemaHeader
 import com.example.ui.components.FilterControlBar
 import com.example.ui.components.HallsStatusGrid
@@ -99,6 +102,7 @@ fun CinemaDashboardScreen(
     val showScrollToTop by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 2 }
     }
+    var showAudienceDialog by remember { mutableStateOf(false) }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Scaffold(
@@ -189,7 +193,9 @@ fun CinemaDashboardScreen(
                         item(key = "kpi_section") {
                             KpiCardsSection(
                                 kpiStats = uiState.kpiStats,
-                                cinemaRepository = cinemaRepository
+                                cinemaRepository = cinemaRepository,
+                                isLiveDataSource = uiState.isLiveDataSource,
+                                onInsideAudienceClick = { showAudienceDialog = true }
                             )
                         }
 
@@ -310,6 +316,16 @@ fun CinemaDashboardScreen(
                             viewModel.setActiveTab(CinemaTab.SCHEDULE)
                             viewModel.toggleMovieSelection(movieTitle)
                         }
+                    )
+                }
+
+                // Audience Real Data Breakdown Dialog
+                if (showAudienceDialog) {
+                    AudienceBreakdownDialog(
+                        allScreenings = uiState.allScreenings,
+                        totalAudience = uiState.kpiStats.peopleInside,
+                        isLiveDataSource = uiState.isLiveDataSource,
+                        onDismiss = { showAudienceDialog = false }
                     )
                 }
             }

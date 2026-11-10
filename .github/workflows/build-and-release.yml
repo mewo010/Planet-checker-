@@ -1,0 +1,154 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: false
+        default: ''
+      release_title:
+        description: 'Release Title'
+        required: false
+        default: 'Planet Checker Release'
+
+permissions:
+  contents: write
+
+jobs:
+  # ==========================================
+  # JOB 1: BUILD APK
+  # ==========================================
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare Signing Keystore
+        run: |
+          # If a release keystore does not exist, generate one for GitHub Actions release signing
+          if [ ! -f "my-upload-key.jks" ]; then
+            keytool -genkey -v -keystore my-upload-key.jks \
+              -alias upload \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=PlanetChecker, OU=Cinema, O=Planet, L=RishonLeZion, C=IL"
+          fi
+          # Also generate a debug keystore if not present
+          if [ ! -f "debug.keystore" ]; then
+            keytool -genkey -v -keystore debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug, O=Android, C=US"
+          fi
+
+      - name: Grant Execute Permission to gradlew
+        run: chmod +x gradlew
+
+      - name: Build APKs (Release & Debug)
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
+          KEYSTORE_PATH: my-upload-key.jks
+        run: ./gradlew assembleRelease assembleDebug --no-daemon
+
+      - name: Collect and Rename APKs
+        run: |
+          mkdir -p output-apks
+          # Find release and debug APKs and copy with clean descriptive names
+          find app/build/outputs/apk/release -name "*.apk" -exec cp {} output-apks/PlanetChecker-release.apk \;
+          find app/build/outputs/apk/debug -name "*.apk" -exec cp {} output-apks/PlanetChecker-debug.apk \;
+          ls -la output-apks/
+
+      - name: Upload APKs as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: planet-checker-apks
+          path: output-apks/*.apk
+          retention-days: 14
+
+  # ==========================================
+  # JOB 2: PUBLISH TO GITHUB RELEASES TAB
+  # ==========================================
+  release:
+    name: Publish to Releases Tab
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download APKs from Build Job
+        uses: actions/download-artifact@v4
+        with:
+          name: planet-checker-apks
+          path: release-assets
+
+      - name: Determine Release Tag & Version
+        id: release_info
+        run: |
+          if [ -n "${{ github.event.inputs.tag_name }}" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="v1.0.${{ github.run_number }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          
+          TITLE="${{ github.event.inputs.release_title || 'Planet Checker' }} $TAG"
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: ${{ steps.release_info.outputs.title }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release-assets/PlanetChecker-release.apk
+            release-assets/PlanetChecker-debug.apk
+          body: |
+            ### 🎬 Planet Checker — לוח עובדים פלאנט ראשון לציון
+            
+            **Automated Release ${{ steps.release_info.outputs.tag }}**
+            
+            #### 📦 Download Assets:
+            - **`PlanetChecker-release.apk`**: Production signed release build.
+            - **`PlanetChecker-debug.apk`**: Debug build for development and testing.
+            
+            #### ✨ Highlights:
+            - Real-time screening schedule and live hall monitor for Planet Rishon LeZion.
+            - Live audience calculation and occupancy monitoring from live box office availability feed.
+            - Israel digital clock and 2-hour crowd preparation timeline.
+            - 24-halls visual activity map.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

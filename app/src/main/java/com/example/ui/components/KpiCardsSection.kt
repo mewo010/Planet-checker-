@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,8 @@ import com.example.ui.theme.PlanetTextSecondary
 fun KpiCardsSection(
     kpiStats: KpiStats,
     cinemaRepository: CinemaRepository,
+    isLiveDataSource: Boolean = true,
+    onInsideAudienceClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -68,10 +71,12 @@ fun KpiCardsSection(
             KpiCard(
                 title = "בקולנוע כרגע",
                 value = kpiStats.peopleInside.toString(),
-                subtitle = "${kpiStats.activeHallsCount} אולמות פעילים",
+                subtitle = "${kpiStats.activeHallsCount} אולמות פעילים • לחץ לפירוט",
                 icon = Icons.Filled.Group,
                 accentColor = PlanetRose,
                 valueColor = Color.White,
+                onClick = onInsideAudienceClick,
+                badgeText = if (isLiveDataSource) "נתון אמת" else "דוגמה",
                 testTag = "kpi_inside",
                 modifier = Modifier.weight(1f)
             )
@@ -141,8 +146,12 @@ private fun KpiCard(
     valueColor: Color,
     modifier: Modifier = Modifier,
     isTextValue: Boolean = false,
+    onClick: (() -> Unit)? = null,
+    badgeText: String? = null,
     testTag: String = ""
 ) {
+    val clickModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
@@ -155,6 +164,7 @@ private fun KpiCard(
                 )
             )
             .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+            .then(clickModifier)
             .padding(12.dp)
             .testTag(testTag)
     ) {
@@ -162,22 +172,43 @@ private fun KpiCard(
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = PlanetTextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = PlanetTextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (badgeText != null) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(PlanetEmerald.copy(alpha = 0.15f))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color = PlanetEmeraldLight
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
