@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>פלאנט צ'קר - לוח הקרנות וניטור אולמות בזמן אמת</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Font - Heebo -->
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;900&family=Secular+One&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Heebo', 'sans-serif'],
+                    },
+                    colors: {
+                        planet: {
+                            dark: '#0f172a',
+                            card: '#1e293b',
+                            accent: '#e11d48',
+                            imax: '#0284c7',
+                            vip: '#eab308',
+                            fourdx: '#8b5cf6',
+                            screenx: '#10b981',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body{background:#07090f;background-image:radial-gradient(1200px 500px at 50% -150px,rgba(225,29,72,.18),transparent 70%),radial-gradient(800px 400px at 100% 0,rgba(234,179,8,.07),transparent 70%);background-attachment:fixed;color:#f1f5f9}
+        .display{font-family:'Secular One','Heebo',sans-serif;letter-spacing:.2px}
+        .poster{position:relative;overflow:hidden;background:linear-gradient(160deg,var(--a),var(--b));isolation:isolate}
+        .poster::before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(circle at 70% 25%,rgba(255,255,255,.28),transparent 45%),repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 2px,transparent 2px 14px)}
+        .poster::after{content:"";position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.88) 0%,rgba(0,0,0,.35) 45%,transparent 70%)}
+        .poster .glyph{position:absolute;top:14%;left:50%;transform:translateX(-50%);font-size:var(--g,56px);color:rgba(255,255,255,.88);filter:drop-shadow(0 6px 14px rgba(0,0,0,.45));z-index:1}
+        .poster .ptitle{position:absolute;z-index:2;right:0;left:0;bottom:0;padding:10px;text-align:center;line-height:1.1;text-shadow:0 2px 8px rgba(0,0,0,.8)}
+        .poster img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:3}
+        .poster:has(img)::after{z-index:4}.poster:has(img) .ptitle{z-index:5}
+        .strip::-webkit-scrollbar{height:6px}.strip::-webkit-scrollbar-thumb{background:#334155;border-radius:4px}
+        .movie-chip{transition:transform .2s,box-shadow .2s}
+        .movie-chip:hover{transform:translateY(-4px)}
+        .movie-chip.sel{outline:2px solid #f43f5e;outline-offset:3px}
+        .ticket{background:linear-gradient(180deg,#111827,#0d1220)}
+        .ticket .notch{position:absolute;width:16px;height:16px;border-radius:50%;background:#07090f}
+        .live-card{box-shadow:0 0 0 1px rgba(244,63,94,.5),0 10px 40px -10px rgba(244,63,94,.45)}
+        @media (prefers-reduced-motion:reduce){.pulse-live,.animate-pulse{animation:none}}
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        .pulse-live {
+            animation: pulse-glow 2s infinite;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.75; transform: scale(1.05); }
+        }
+    
+        .kpi{background:linear-gradient(180deg,#111827,#0d1220)}
+        .ev{transition:background .2s}
+        .ev.urgent{background:rgba(245,158,11,.10);border-color:rgba(245,158,11,.5)}
+        select option{background:#0f172a}
+</style>
+</head>
+<body class="min-h-screen font-sans flex flex-col">
+<header class="bg-slate-950/85 backdrop-blur border-b border-slate-800 sticky top-0 z-50 shadow-lg">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <div class="bg-gradient-to-tr from-rose-600 to-amber-500 p-2.5 rounded-xl text-white"><i class="fa-solid fa-film text-xl"></i></div>
+      <div>
+        <h1 class="display text-xl text-white">פלאנט צ'קר <span class="text-rose-400 text-sm">לוח עובדים</span></h1>
+        <p class="text-xs text-slate-400">פלאנט ראשון לציון • מי נכנס, מי יוצא ומתי</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="sourceBadge" class="text-xs px-2.5 py-1 rounded-full border border-slate-700 text-slate-400">טוען…</span>
+      <button id="refreshBtn" class="bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded-xl px-3 py-2 text-sm" title="רענון"><i class="fa-solid fa-rotate"></i></button>
+      <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl px-4 py-1.5 text-center">
+        <div class="text-[10px] text-slate-400">שעון ישראל</div>
+        <div id="currentTimeDisplay" class="font-mono text-xl font-bold text-amber-300 leading-tight">--:--:--</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-5 flex-grow w-full space-y-5">
+  <!-- KPIs -->
+  <section class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="kpi border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-400"><i class="fa-solid fa-users text-rose-400 ml-1"></i>בקולנוע כרגע</div><div id="kpiInside" class="display text-4xl text-white mt-1">0</div><div id="kpiRooms" class="text-xs text-slate-500 mt-1"></div></div>
+    <div class="kpi border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-400"><i class="fa-solid fa-right-from-bracket text-amber-400 ml-1"></i>יוצאים ב-30 דק'</div><div id="kpiOut" class="display text-4xl text-amber-300 mt-1">0</div><div id="kpiOutN" class="text-xs text-slate-500 mt-1"></div></div>
+    <div class="kpi border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-400"><i class="fa-solid fa-right-to-bracket text-emerald-400 ml-1"></i>מגיעים ב-30 דק'</div><div id="kpiIn" class="display text-4xl text-emerald-300 mt-1">0</div><div id="kpiInN" class="text-xs text-slate-500 mt-1"></div></div>
+    <div class="kpi border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-400"><i class="fa-solid fa-bell-concierge text-sky-400 ml-1"></i>האירוע הבא</div><div id="kpiNext" class="display text-2xl text-white mt-2 leading-tight">—</div><div id="kpiNextSub" class="text-xs text-slate-500 mt-1"></div></div>
+  </section>
+
+  <div class="grid lg:grid-cols-3 gap-5 items-start">
+    <!-- Timeline -->
+    <section class="lg:sticky lg:top-24 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="display text-xl text-white">הכנה לעומסים</h2>
+        <span class="text-xs text-slate-500">שעתיים קדימה</span>
+      </div>
+      <div id="events" class="space-y-2 max-h-[34rem] overflow-y-auto custom-scrollbar pl-1"></div>
+      <p class="text-[11px] text-slate-500 leading-relaxed">כניסה = כ-20 דק' לפני תחילת ההקרנה. יציאה = שעת הסיום כולל 15 דק' תוספת. מספרי הצופים הם הערכה לפי תפוסת האולם.</p>
+    </section>
+
+    <div class="lg:col-span-2 space-y-4">
+      <!-- Controls -->
+      <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+            <input type="text" id="searchInput" placeholder="חיפוש לפי שם סרט או מספר אולם" class="w-full bg-slate-800/90 border border-slate-700 rounded-xl pr-10 pl-4 py-2.5 text-sm placeholder-slate-400 focus:outline-none focus:border-rose-500">
+          </div>
+          <select id="sortSelect" class="bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none">
+            <option value="start">מיון: שעת התחלה</option><option value="end">מיון: שעת סיום</option><option value="room">מיון: אולם</option><option value="crowd">מיון: הכי עמוס</option>
+          </select>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800" id="roomTypeFilters">
+          <button data-type="ALL" class="filter-btn active bg-rose-600 text-white text-xs font-medium px-3.5 py-2 rounded-lg">הכל (<span id="countALL">0</span>)</button>
+          <button data-type="LIVE" class="filter-btn bg-slate-800 border border-rose-500/50 text-rose-400 text-xs font-medium px-3.5 py-2 rounded-lg">מוקרן כעת (<span id="countLIVE">0</span>)</button>
+          <button data-type="IMAX" class="filter-btn bg-slate-800 border border-slate-700 text-sky-400 text-xs font-medium px-3.5 py-2 rounded-lg">IMAX (<span id="countIMAX">0</span>)</button>
+          <button data-type="VIP" class="filter-btn bg-slate-800 border border-slate-700 text-amber-400 text-xs font-medium px-3.5 py-2 rounded-lg">VIP (<span id="countVIP">0</span>)</button>
+          <button data-type="4DX" class="filter-btn bg-slate-800 border border-slate-700 text-purple-400 text-xs font-medium px-3.5 py-2 rounded-lg">4DX (<span id="count4DX">0</span>)</button>
+          <button data-type="ScreenX" class="filter-btn bg-slate-800 border border-slate-700 text-emerald-400 text-xs font-medium px-3.5 py-2 rounded-lg">ScreenX (<span id="countScreenX">0</span>)</button>
+          <button data-type="2D" class="filter-btn bg-slate-800 border border-slate-700 text-slate-300 text-xs font-medium px-3.5 py-2 rounded-lg">2D (<span id="count2D">0</span>)</button>
+          <label class="mr-auto flex items-center gap-2 text-xs text-slate-400 cursor-pointer"><input type="checkbox" id="showEnded" class="accent-rose-500"> הצג שהסתיימו</label>
+        </div>
+      </section>
+
+      <section>
+        <div class="flex items-end justify-between mb-2"><h2 class="display text-xl text-white">סרטים</h2><span class="text-xs text-slate-400">לחיצה על פוסטר מסננת</span></div>
+        <div id="movieStrip" class="strip flex gap-4 overflow-x-auto pb-3 -mx-1 px-1"></div>
+      </section>
+
+      <section id="screeningsGrid" class="grid grid-cols-1 xl:grid-cols-2 gap-4"></section>
+      <div id="noResults" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center text-slate-400">אין הקרנות מתאימות כרגע</div>
+    </div>
+  </div>
+</main>
+<footer class="bg-slate-950 border-t border-slate-900 py-4 text-xs text-slate-500 text-center">הנתונים מתרעננים אוטומטית כל שעה • מושכים מהנתונים של אפליקציית Planet Checker</footer>
+
+<script>
+const FIRST_URL = "https://gist.githubusercontent.com/Gaash14/a12b463cc829c43a7ab0bf8385f1be63/raw/first-schedule.json";
+const HOURLY_URL = "https://gist.githubusercontent.com/Gaash14/da630d78754949bce95065eadb9fd370/raw/schedule.json";
+const ENTRY_LEAD = 20, EXTRA_END = 15, ENDED_KEEP = 3;
+const CAPS = {1:124,2:124,3:162,4:163,5:400,6:123,7:311,8:154,9:88,10:217,11:251,12:118,13:119,14:119,15:119,16:182,17:182,18:112,19:204,20:124,21:54,22:54,23:70,24:56};
+
+function roomNum(r){const m=String(r).match(/\d+/);return m?parseInt(m[0],10):null}
+function roomLabel(r){return /אולם/.test(r)?r:'אולם '+r}
+function roomType(r){const n=roomNum(r);if(!n)return null;if(n===5)return'IMAX';if(n===19)return'ScreenX';if(n===20)return'4DX';if(n>=21&&n<=24)return'VIP';return'2D'}
+function parseT(t){const p=String(t||'').split(':');if(p.length<2)return null;const h=+p[0],m=+p[1];return isNaN(h)||isNaN(m)?null:h*60+m}
+const cm = m => m < 420 ? m + 1440 : m;           // cinema day starts 07:00
+const fmt = m => { m=((m%1440)+1440)%1440; return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0') };
+function rel(mins){ if(mins<=0) return 'עכשיו'; if(mins<60) return `בעוד ${mins} דק'`; return `בעוד ${Math.floor(mins/60)} ש' ${mins%60?(mins%60)+" דק'":''}`.trim() }
+function israelNow(){
+  const parts = new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Jerusalem',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date());
+  const g = t => +parts.find(p=>p.type===t).value % 24;
+  return {h:g('hour'),m:g('minute'),s:g('second')};
+}
+function prepare(list){
+  return list.map(x=>{
+    const a=parseT(x.start), b=parseT(x.end); if(a===null||b===null) return null;
+    const cap=CAPS[roomNum(x.room)]||null, ratio=(x.availabilityRatio!=null&&isFinite(x.availabilityRatio))?x.availabilityRatio:null;
+    let s=cm(a), e=cm(b)+EXTRA_END; if(e<=s) e+=1440;
+    return {...x, s, e, cap, ratio, people:(cap&&ratio!==null)?Math.round(cap*(1-Math.max(0,Math.min(1,ratio)))):null, type:roomType(x.room)||'2D'};
+  }).filter(Boolean);
+}
+function statusOf(i,n){ if(n>=i.s&&n<i.e)return'LIVE'; if(n<i.s)return'UPCOMING'; if(n<i.e+ENDED_KEEP)return'ENDED_RECENTLY'; return'ENDED' }
+function crowdLevel(i){ if(i.ratio===null)return{t:'אין נתונים',c:'text-slate-400',bar:'bg-slate-600',pct:0};
+  const p=Math.round((1-i.ratio)*100);
+  if(p>85)return{t:'עמוס מאוד',c:'text-rose-400',bar:'bg-rose-500',pct:p};
+  if(p>60)return{t:'עמוס',c:'text-amber-400',bar:'bg-amber-500',pct:p};
+  if(p>30)return{t:'בינוני',c:'text-sky-300',bar:'bg-sky-500',pct:p};
+  return{t:'שקט',c:'text-emerald-400',bar:'bg-emerald-500',pct:p} }
+
+const MOCK = [
+ ["חולית: חלק שני","אולם 5","14:00","16:45",.15],["חולית: חלק שני","אולם 5","17:30","20:15",.40],["חולית: חלק שני","אולם 5","21:00","23:45",.05],
+ ["גזע המפלצות: גודזילה x קונג","אולם 20","16:15","18:15",.25],["גזע המפלצות: גודזילה x קונג","אולם 20","19:00","21:00",.10],
+ ["אופנהיימר","אולם 19","18:00","21:00",.50],["אהבה אופקית","אולם 21 (VIP)","19:30","21:20",0],["אהבה אופקית","אולם 22 (VIP)","20:30","22:20",.35],
+ ["קונג פו פנדה 4","אולם 1","15:00","16:35",.80],["קונג פו פנדה 4","אולם 1","17:15","18:50",.45],["הקול בראש 2","אולם 3","16:00","17:40",.60],
+ ["הקול בראש 2","אולם 3","18:20","20:00",.20],["באטמן: אגדת האביר","אולם 10","21:30","23:55",.70],["דדפול & וולברין","אולם 7","19:15","21:25",.05],["גלדיאטור 2","אולם 8","20:00","22:30",.30]
+].map(([title,room,start,end,availabilityRatio])=>({title,room,start,end,availabilityRatio}));
+
+async function getJson(u){ const r=await fetch(u+'?nocache='+Date.now()); if(!r.ok) throw new Error(r.status); return r.json() }
+async function loadData(){
+  const badge=document.getElementById('sourceBadge');
+  try{
+    const base=await getJson(FIRST_URL);
+    let hourly=null; try{ hourly=await getJson(HOURLY_URL) }catch(e){}
+    const upd=new Map(((hourly&&hourly.screenings)||[]).map(x=>[x.room+'|'+x.start+'|'+x.title,x.availabilityRatio]));
+    const list=(base.screenings||[]).map(x=>{const k=x.room+'|'+x.start+'|'+x.title;return upd.has(k)?{...x,availabilityRatio:upd.get(k)}:x});
+    if(!list.length) throw new Error('empty');
+    mockData=prepare(list);
+    badge.textContent='נתונים חיים • '+(base.date||''); badge.className='text-xs px-2.5 py-1 rounded-full border border-emerald-500/40 text-emerald-300 bg-emerald-500/10';
+  }catch(e){
+    mockData=prepare(MOCK);
+    badge.textContent='נתוני דוגמה (אין חיבור)'; badge.className='text-xs px-2.5 py-1 rounded-full border border-amber-500/40 text-amber-300 bg-amber-500/10';
+  }
+  window.__stripDirty=null; renderAll();
+}
+
+        // Poster art (generated). To use a real poster, add its image URL to POSTERS below.
+        const POSTERS = {
+            // "חולית: חלק שני": "https://example.com/dune2.jpg",
+        };
+        const MOVIE_META = {
+            "חולית: חלק שני": { a:"#c2410c", b:"#1c0a02", icon:"fa-mountain-sun", genre:"מדע בדיוני" },
+            "גזע המפלצות: גודזילה x קונג": { a:"#0e7490", b:"#020d1a", icon:"fa-dragon", genre:"אקשן" },
+            "אופנהיימר": { a:"#b45309", b:"#1a0b02", icon:"fa-atom", genre:"דרמה" },
+            "אהבה אופקית": { a:"#be185d", b:"#2a0618", icon:"fa-heart", genre:"רומנטי" },
+            "קונג פו פנדה 4": { a:"#15803d", b:"#041a0c", icon:"fa-paw", genre:"אנימציה" },
+            "הקול בראש 2": { a:"#7c3aed", b:"#150a33", icon:"fa-face-grin-stars", genre:"אנימציה" },
+            "באטמן: אגדת האביר": { a:"#334155", b:"#020617", icon:"fa-mask", genre:"אקשן" },
+            "דדפול & וולברין": { a:"#dc2626", b:"#1c0404", icon:"fa-skull-crossbones", genre:"אקשן" },
+            "גלדיאטור 2": { a:"#a16207", b:"#1a1002", icon:"fa-shield-halved", genre:"היסטורי" }
+        };
+        // Real posters: looked up by movie title on Hebrew Wikipedia (no API key), cached in the browser.
+        const POSTER_CACHE_KEY = 'planet_posters_v1';
+        let posterCache = {};
+        try { posterCache = JSON.parse(localStorage.getItem(POSTER_CACHE_KEY) || '{}'); } catch (e) {}
+        Object.assign(POSTERS, Object.fromEntries(Object.entries(posterCache).filter(([, v]) => v)));
+        const posterTried = new Set(Object.keys(posterCache));
+
+        async function fetchPosterUrl(title) {
+            const q = encodeURIComponent(title.replace(/\(.*?\)/g, '').trim() + ' סרט');
+            const url = 'https://he.wikipedia.org/w/api.php?action=query&generator=search&gsrlimit=3&prop=pageimages&piprop=thumbnail&pithumbsize=500&format=json&origin=*&gsrsearch=' + q;
+            const res = await fetch(url);
+            const data = await res.json();
+            const pages = Object.values((data.query && data.query.pages) || {}).sort((a, b) => a.index - b.index);
+            const hit = pages.find(pg => pg.thumbnail && pg.thumbnail.source);
+            return hit ? hit.thumbnail.source : null;
+        }
+        async function loadPosters() {
+            for (const title of movieList) {
+                if (POSTERS[title] || posterTried.has(title)) continue;
+                posterTried.add(title);
+                try {
+                    const src = await fetchPosterUrl(title);
+                    posterCache[title] = src;
+                    try { localStorage.setItem(POSTER_CACHE_KEY, JSON.stringify(posterCache)); } catch (e) {}
+                    if (src) { POSTERS[title] = src; window.__stripDirty = null; }
+                } catch (e) { /* offline or blocked: keep generated art */ }
+            }
+        }
+
+        function hashHue(str) { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+        function posterHTML(title, sizeClass, glyphPx, titlePx) {
+            const hue = hashHue(title);
+            const m = MOVIE_META[title] || { a:`hsl(${hue} 55% 38%)`, b:`hsl(${hue} 50% 8%)`, icon:"fa-film", genre:"" };
+            const img = POSTERS[title] ? `<img src="${POSTERS[title]}" alt="${title}" onerror="this.remove()">` : '';
+            return `<div class="poster rounded-xl shadow-xl ${sizeClass}" style="--a:${m.a};--b:${m.b};--g:${glyphPx}px">
+                <i class="fa-solid ${m.icon} glyph"></i>${img}
+                <div class="ptitle display text-white" style="font-size:${titlePx}px">${title}</div></div>`;
+        }
+        function renderStrip() {
+            const map = new Map();
+            mockData.forEach(i => map.set(i.title, (map.get(i.title) || 0) + 1));
+            movieList = [...map.keys()];
+            document.getElementById('movieStrip').innerHTML = movieList.map((t, idx) => `
+                <button data-idx="${idx}" class="movie-chip shrink-0 w-32 text-right ${searchQuery === t ? 'sel rounded-xl' : ''}">
+                    ${posterHTML(t, 'w-32 aspect-[2/3]', 40, 15)}
+                    <div class="text-[11px] text-slate-400 mt-2 px-0.5">${MOVIE_META[t]?.genre || ''} • ${map.get(t)} הקרנות</div>
+                </button>`).join('');
+        }
+
+
+let activeFilter='ALL', searchQuery='', mockData=[], movieList=[], sortBy='start';
+const gridEl=document.getElementById('screeningsGrid'), noResultsEl=document.getElementById('noResults'), searchInput=document.getElementById('searchInput');
+
+function renderAll(){
+  const t=israelNow(); document.getElementById('currentTimeDisplay').textContent=[t.h,t.m,t.s].map(v=>String(v).padStart(2,'0')).join(':');
+  const now=cm(t.h*60+t.m), showEnded=document.getElementById('showEnded').checked;
+  const withStatus=mockData.map(i=>({i,st:statusOf(i,now)}));
+  const visible=withStatus.filter(({st})=>showEnded||st!=='ENDED');
+
+  // ---- KPIs + events
+  let inside=0, rooms=0, out30=0, out30n=0, in30=0, in30n=0; const events=[];
+  withStatus.forEach(({i,st})=>{
+    const p=i.people||0;
+    if(st==='LIVE'){ inside+=p; rooms++; if(i.e-now<=30){out30+=p;out30n++} }
+    if(st==='LIVE'||st==='ENDED_RECENTLY'){ if(i.e>=now-ENDED_KEEP&&i.e<=now+120) events.push({t:i.e,kind:'out',i}) }
+    if(st==='UPCOMING'){ const et=i.s-ENTRY_LEAD; if(et<=now+120) events.push({t:Math.max(et,now),kind:'in',i,et});
+      if(et<=now+30){in30+=p;in30n++} }
+  });
+  events.sort((a,b)=>a.t-b.t||(a.kind==='out'?-1:1));
+  document.getElementById('kpiInside').textContent=inside.toLocaleString('he-IL');
+  document.getElementById('kpiRooms').textContent=rooms+' אולמות פעילים';
+  document.getElementById('kpiOut').textContent=out30.toLocaleString('he-IL'); document.getElementById('kpiOutN').textContent=out30n+' אולמות מתרוקנים';
+  document.getElementById('kpiIn').textContent=in30.toLocaleString('he-IL'); document.getElementById('kpiInN').textContent=in30n+' הקרנות מתמלאות';
+  const nx=events[0];
+  document.getElementById('kpiNext').textContent=nx?(nx.kind==='out'?'יציאה':'כניסה')+' • '+roomLabel(nx.i.room):'אין אירועים קרובים';
+  document.getElementById('kpiNextSub').textContent=nx?fmt(nx.t)+' • '+rel(nx.t-now):'';
+  document.getElementById('events').innerHTML=events.length?events.slice(0,14).map(ev=>{
+    const urgent=ev.t-now<=10, out=ev.kind==='out', p=ev.i.people;
+    const nowEntry=!out&&ev.et<=now;
+    return `<div class="ev ${urgent?'urgent':''} flex items-center gap-3 border border-slate-800 rounded-xl p-2.5">
+      <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${out?'bg-amber-500/15 text-amber-300':'bg-emerald-500/15 text-emerald-300'}"><i class="fa-solid ${out?'fa-right-from-bracket':'fa-right-to-bracket'}"></i></div>
+      <div class="min-w-0 flex-1">
+        <div class="text-sm font-bold text-white truncate">${out?'קהל יוצא':nowEntry?'קהל נכנס עכשיו':'קהל מתחיל להגיע'} • ${roomLabel(ev.i.room)}</div>
+        <div class="text-xs text-slate-400 truncate">${ev.i.title}</div>
+      </div>
+      <div class="text-left shrink-0"><div class="font-mono font-bold ${urgent?'text-amber-300':'text-slate-200'}">${fmt(out?ev.t:ev.et)}</div><div class="text-[11px] text-slate-400">${rel(ev.t-now)}${p!==null?' • ~'+p:''}</div></div>
+    </div>`}).join(''):'<div class="text-sm text-slate-500 text-center py-6">שקט ב-2 השעות הקרובות</div>';
+
+  // ---- filters & counts
+  const counts={ALL:0,LIVE:0,IMAX:0,VIP:0,'4DX':0,ScreenX:0,'2D':0};
+  const q=searchQuery.trim();
+  const list=visible.filter(({i,st})=>{
+    counts.ALL++; if(st==='LIVE')counts.LIVE++; counts[i.type]++;
+    if(q&&!(i.title.includes(q)||i.room.includes(q)))return false;
+    if(activeFilter==='LIVE')return st==='LIVE';
+    return activeFilter==='ALL'||i.type===activeFilter;
+  });
+  Object.keys(counts).forEach(k=>{const b=document.getElementById('count'+k); if(b)b.textContent=counts[k]});
+  const sorters={start:(a,b)=>a.i.s-b.i.s,end:(a,b)=>a.i.e-b.i.e,room:(a,b)=>(roomNum(a.i.room)||99)-(roomNum(b.i.room)||99)||a.i.s-b.i.s,crowd:(a,b)=>(b.i.people||0)-(a.i.people||0)};
+  list.sort(sorters[sortBy]);
+
+  if(!movieList.length||window.__stripDirty!==searchQuery){renderStrip();window.__stripDirty=searchQuery;loadPosters()}
+  gridEl.innerHTML=''; noResultsEl.classList.toggle('hidden',list.length>0);
+
+  list.forEach(({i,st})=>{
+    const cl=crowdLevel(i);
+    const typeStyle={IMAX:'bg-sky-950/80 text-sky-400 border-sky-600/50',VIP:'bg-amber-950/80 text-amber-400 border-amber-600/50','4DX':'bg-purple-950/80 text-purple-400 border-purple-600/50',ScreenX:'bg-emerald-950/80 text-emerald-400 border-emerald-600/50'}[i.type]||'bg-slate-800 text-slate-300 border-slate-700';
+    let badge, border='border-slate-800', line='';
+    if(st==='LIVE'){ badge='<span class="pulse-live text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/50 px-2.5 py-1 rounded-full">● מוקרן כעת</span>'; border='border-rose-500/40 live-card'; line=`<span class="text-rose-300 font-bold">נגמר ${rel(i.e-now)}</span>`; }
+    else if(st==='UPCOMING'){ const inEntry=i.s-ENTRY_LEAD<=now; badge=inEntry?'<span class="text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 px-2.5 py-1 rounded-full">קהל נכנס</span>':'<span class="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full">טרם החל</span>'; line=`<span class="text-slate-300">מתחיל ${rel(i.s-now)}</span>`; }
+    else if(st==='ENDED_RECENTLY'){ badge='<span class="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-full">הסתיים לאחרונה</span>'; border='border-amber-500/30'; }
+    else { badge='<span class="text-xs bg-slate-800/60 text-slate-500 px-2.5 py-1 rounded-full">הסתיים</span>'; border='border-slate-800/50 opacity-60'; }
+    gridEl.insertAdjacentHTML('beforeend',`
+      <article class="ticket relative border ${border} rounded-2xl overflow-hidden flex">
+        <div class="p-3 shrink-0">${posterHTML(i.title,'w-24 sm:w-28 h-full min-h-[230px]',40,13)}</div>
+        <div class="flex-1 min-w-0 p-3 pr-1 flex flex-col justify-between gap-2.5">
+          <div class="space-y-2">
+            <div class="flex items-center justify-between gap-2"><span class="text-xs font-bold border px-2 py-0.5 rounded-md ${typeStyle}">${i.type}</span>${badge}</div>
+            <div><h3 class="display text-lg text-white leading-tight">${i.title}</h3><p class="text-xs text-slate-400 mt-0.5"><i class="fa-solid fa-door-open ml-1 text-slate-500"></i>${roomLabel(i.room)}</p></div>
+            <div class="text-xs">${line}</div>
+            <div class="grid grid-cols-3 gap-1.5 text-center">
+              <div class="bg-slate-950/60 rounded-lg py-1.5"><div class="text-[10px] text-emerald-400">כניסה</div><div class="font-mono font-bold text-sm">${fmt(i.s-ENTRY_LEAD)}</div></div>
+              <div class="bg-slate-950/60 rounded-lg py-1.5"><div class="text-[10px] text-slate-500">התחלה</div><div class="font-mono font-black text-base text-white">${fmt(i.s)}</div></div>
+              <div class="bg-slate-950/60 rounded-lg py-1.5"><div class="text-[10px] text-amber-400">יציאה</div><div class="font-mono font-bold text-sm text-amber-200">${fmt(i.e)}</div></div>
+            </div>
+          </div>
+          <div class="space-y-1 pt-2.5 border-t border-dashed border-slate-700 pl-3">
+            <div class="flex items-end justify-between">
+              <div><span class="display text-3xl text-white">${i.people!==null?i.people:'?'}</span><span class="text-xs text-slate-500"> / ${i.cap||'?'} צופים</span></div>
+              <span class="text-sm font-bold ${cl.c}">${cl.t}</span>
+            </div>
+            <div class="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800"><div class="${cl.bar} h-full" style="width:${cl.pct}%"></div></div>
+          </div>
+        </div>
+      </article>`);
+  });
+}
+
+searchInput.addEventListener('input',e=>{searchQuery=e.target.value;renderAll()});
+document.getElementById('sortSelect').addEventListener('change',e=>{sortBy=e.target.value;renderAll()});
+document.getElementById('showEnded').addEventListener('change',renderAll);
+document.getElementById('refreshBtn').addEventListener('click',loadData);
+document.getElementById('movieStrip').addEventListener('click',e=>{
+  const b=e.target.closest('.movie-chip'); if(!b)return;
+  const t=movieList[+b.dataset.idx]; searchQuery=searchQuery===t?'':t; searchInput.value=searchQuery; renderAll();
+});
+document.getElementById('roomTypeFilters').addEventListener('click',e=>{
+  const btn=e.target.closest('.filter-btn'); if(!btn)return;
+  document.querySelectorAll('.filter-btn').forEach(b=>{b.classList.remove('active','bg-rose-600','text-white');b.classList.add('bg-slate-800')});
+  btn.classList.remove('bg-slate-800'); btn.classList.add('active','bg-rose-600','text-white');
+  activeFilter=btn.dataset.type; renderAll();
+});
+setInterval(renderAll,1000);
+setInterval(loadData,60*60*1000);
+loadData();
+</script>
+</body>
+</html>

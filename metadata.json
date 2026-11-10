@@ -1,0 +1,6 @@
+{
+  "name": "Planet Checker",
+  "description": "לוח הקרנות וניטור אולמות בזמן אמת לפלאנט ראשון לציון",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
