@@ -71,13 +71,16 @@ fun HallsStatusGrid(
             hallNum in 21..24 -> RoomType.VIP
             else -> RoomType.TWO_D
         }
-        val capacity = CinemaRepository.HALL_CAPACITIES[hallNum] ?: 120
-
         val screeningsForHall = allScreenings.filter { it.roomNumber == hallNum }
         val live = screeningsForHall.firstOrNull { it.status == ScreeningStatus.LIVE }
         val next = screeningsForHall
             .filter { it.status == ScreeningStatus.UPCOMING && it.startMin > currentCinemaMinutes }
             .minByOrNull { it.startMin }
+        val capacity = live?.roomCapacity()
+            ?: next?.roomCapacity()
+            ?: screeningsForHall.firstNotNullOfOrNull { it.roomCapacity() }
+            ?: CinemaRepository.HALL_CAPACITIES[hallNum]
+            ?: 0
 
         HallState(
             hallNumber = hallNum,

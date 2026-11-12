@@ -1,8 +1,13 @@
 package com.example.ui.viewmodel
 
+import android.app.Application
 import androidx.compose.ui.graphics.Color
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.diagnostics.LiveValidationSnapshotBuilder
+import com.example.data.diagnostics.SourceTelemetryBundle
+import com.example.data.local.PlanetDatabase
+import com.example.data.model.AvailabilitySource
 import com.example.data.model.CinemaEvent
 import com.example.data.model.CinemaTab
 import com.example.data.model.CinemaUiState
@@ -13,36 +18,115 @@ import com.example.data.model.RoomType
 import com.example.data.model.Screening
 import com.example.data.model.ScreeningStatus
 import com.example.data.model.SortOption
+import com.example.data.model.calculateCinemaOccupancy
+import com.example.data.model.deduplicateScreenings
+import com.example.data.repository.AttendanceHistoryRepository
 import com.example.data.repository.CinemaRepository
+import com.example.data.repository.SeatAvailabilityRepository
+import com.example.worker.CinemaMonitorWorker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
-class CinemaViewModel(
-    private val repository: CinemaRepository = CinemaRepository()
-) : ViewModel() {
+@OptIn(ExperimentalCoroutinesApi::class)
+class CinemaViewModel private constructor(
+    application: Application,
+    private val repository: CinemaRepository,
+    private val seatAvailabilityRepository: SeatAvailabilityRepository,
+    private val attendanceRepository: AttendanceHistoryRepository?,
+    private val scheduleBackgroundWork: Boolean
+) : AndroidViewModel(application) {
+
+    @Suppress("unused")
+    constructor(application: Application) : this(
+        application = application,
+        repository = CinemaRepository(),
+        seatAvailabilityRepository = SeatAvailabilityRepository(),
+        attendanceRepository = AttendanceHistoryRepository(
+            PlanetDatabase.getInstance(application).attendanceDao()
+        ),
+        scheduleBackgroundWork = true
+    )
 
     private val _uiState = MutableStateFlow(CinemaUiState(isLoading = true))
     val uiState: StateFlow<CinemaUiState> = _uiState.asStateFlow()
 
     private val jerusalemZone = ZoneId.of("Asia/Jerusalem")
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+    private val hhmmFormatter = DateTimeFormatter.ofPattern("HH:mm")
     private val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 
     private var tickerJob: Job? = null
     private var posterJob: Job? = null
+    private var seatRefreshJob: Job? = null
 
     init {
+        val initialCinemaDate = getEffectiveCinemaDate(getCurrentIsraelZonedTime()).toString()
+        _uiState.update {
+            it.copy(
+                currentCinemaIsoDate = initialCinemaDate,
+                selectedHistoryDate = initialCinemaDate
+            )
+        }
+        if (scheduleBackgroundWork) {
+            CinemaMonitorWorker.schedulePeriodicMonitoring(application)
+        }
+        observeAttendanceHistory()
         startClockAndPeriodicUpdates()
-        loadData()
+        loadData(isUserInitiated = false)
+    }
+
+    private fun observeAttendanceHistory() {
+        val historyRepo = attendanceRepository ?: return
+        viewModelScope.launch {
+            historyRepo.observeAvailableDates().collect { storedDates ->
+                val todayIso = _uiState.value.currentCinemaIsoDate
+                val mergedDates = (listOf(todayIso) + storedDates)
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sortedDescending()
+                _uiState.update { it.copy(availableHistoryDates = mergedDates) }
+            }
+        }
+
+        viewModelScope.launch {
+            _uiState
+                .map { it.selectedHistoryDate to it.currentCinemaIsoDate }
+                .distinctUntilChanged()
+                .flatMapLatest { (selectedDate, todayIso) ->
+                    if (selectedDate.isBlank()) {
+                        flowOf(null)
+                    } else {
+                        historyRepo.observeDailyStats(
+                            dateIso = selectedDate,
+                            todayIso = todayIso,
+                            liveScreeningsProvider = { _uiState.value.allScreenings },
+                            nowProvider = { getCurrentIsraelZonedTime() }
+                        )
+                    }
+                }
+                .collect { stats ->
+                    _uiState.update { it.copy(dailyStats = stats) }
+                }
+        }
     }
 
     private fun startClockAndPeriodicUpdates() {
@@ -53,8 +137,12 @@ class CinemaViewModel(
                 updateCurrentTimeAndRecalculate()
                 delay(1000)
                 secondCounter++
-                // Automatically refresh network data every 30 minutes
-                if (secondCounter >= 1800) {
+                // Refresh live active seat maps every 5 minutes (only for screenings with presentationId)
+                if (secondCounter % 300 == 0 && secondCounter % 900 != 0) {
+                    refreshActiveSeatsOnly()
+                }
+                // Full schedule & hourly availability refresh every 15 minutes
+                if (secondCounter >= 900) {
                     secondCounter = 0
                     loadData(isUserInitiated = false)
                 }
@@ -70,25 +158,31 @@ class CinemaViewModel(
         }
     }
 
+    private fun getEffectiveCinemaDate(now: ZonedDateTime): LocalDate {
+        val jerusalem = now.withZoneSameInstant(jerusalemZone)
+        val rawMinutes = jerusalem.hour * 60 + jerusalem.minute
+        return if (rawMinutes < 420) jerusalem.toLocalDate().minusDays(1) else jerusalem.toLocalDate()
+    }
+
     private fun updateCurrentTimeAndRecalculate() {
         val now = getCurrentIsraelZonedTime()
         val formattedTime = now.format(timeFormatter)
         val formattedDate = now.format(dateFormatter)
+        val cinemaIsoDate = getEffectiveCinemaDate(now).toString()
         val rawMinutes = now.hour * 60 + now.minute
         val cinemaMinutes = repository.normalizeCinemaMinutes(rawMinutes)
 
         _uiState.update { state ->
             val updatedScreenings = state.allScreenings.map { s ->
-                val newStatus = when {
-                    cinemaMinutes in s.startMin until s.endMin -> ScreeningStatus.LIVE
-                    cinemaMinutes < s.startMin -> ScreeningStatus.UPCOMING
-                    cinemaMinutes < s.endMin + CinemaRepository.ENDED_KEEP -> ScreeningStatus.ENDED_RECENTLY
-                    else -> ScreeningStatus.ENDED
-                }
-                s.copy(status = newStatus)
+                s.copy(status = s.statusAt(now))
             }
 
-            val (kpis, events) = calculateKpisAndEvents(updatedScreenings, cinemaMinutes)
+            val (kpis, events) = calculateKpisAndEvents(
+                screenings = updatedScreenings,
+                now = now,
+                nowMin = cinemaMinutes,
+                lastUpdatedEpochMs = state.lastSuccessfulUpdateEpochMs
+            )
             val filtered = applyFilterAndSort(
                 all = updatedScreenings,
                 nowMin = cinemaMinutes,
@@ -98,18 +192,39 @@ class CinemaViewModel(
                 sortBy = state.sortBy,
                 showEnded = state.showEnded
             )
-            val counts = calculateTypeCounts(updatedScreenings, cinemaMinutes)
+            val counts = calculateTypeCounts(updatedScreenings)
+            val freshness = computeFreshnessLabel(
+                lastUpdateMs = state.lastSuccessfulUpdateEpochMs,
+                isLiveSource = state.isLiveDataSource
+            )
+
+            // Keep selectedHistoryDate tracking today if previously on old date or unset
+            val selectedDate = state.selectedHistoryDate.ifBlank { cinemaIsoDate }
 
             state.copy(
                 currentIsraelTime = formattedTime,
                 currentDate = formattedDate,
+                currentCinemaIsoDate = cinemaIsoDate,
+                selectedHistoryDate = selectedDate,
                 currentCinemaMinutes = cinemaMinutes,
+                dataFreshnessLabel = freshness,
                 allScreenings = updatedScreenings,
                 filteredScreenings = filtered,
                 timelineEvents = events,
                 kpiStats = kpis,
                 countsByType = counts
             )
+        }
+    }
+
+    private fun computeFreshnessLabel(lastUpdateMs: Long?, isLiveSource: Boolean): String {
+        if (!isLiveSource || lastUpdateMs == null) return "אופליין / נתוני דוגמה"
+        val ageMin = ((System.currentTimeMillis() - lastUpdateMs) / 60_000L).coerceAtLeast(0)
+        return when {
+            ageMin < 1 -> "עדכני (ברגע זה)"
+            ageMin <= 5 -> "עדכני (לפני $ageMin דק')"
+            ageMin <= 20 -> "עודכן לפני $ageMin דק'"
+            else -> "נתון ישן (לפני $ageMin דק')"
         }
     }
 
@@ -125,9 +240,21 @@ class CinemaViewModel(
 
             val result = repository.loadSchedule(cinemaMinutes)
 
-            val (kpis, events) = calculateKpisAndEvents(result.screenings, cinemaMinutes)
+            val fetchedAt = result.fetchedAtEpochMs
+            val effectiveUpdatedMs = fetchedAt ?: _uiState.value.lastSuccessfulUpdateEpochMs
+            val (kpis, events) = calculateKpisAndEvents(
+                screenings = result.screenings,
+                now = now,
+                nowMin = cinemaMinutes,
+                lastUpdatedEpochMs = effectiveUpdatedMs
+            )
             val movieSummaries = generateMovieSummaries(result.screenings)
-            val counts = calculateTypeCounts(result.screenings, cinemaMinutes)
+            val counts = calculateTypeCounts(result.screenings)
+            val lastUpdateFormatted = fetchedAt?.let {
+                Instant.ofEpochMilli(it).atZone(jerusalemZone).format(hhmmFormatter)
+            } ?: "לא זמין"
+
+            val cinemaIsoDate = result.cinemaDate.toString()
 
             _uiState.update { state ->
                 val filtered = applyFilterAndSort(
@@ -140,11 +267,22 @@ class CinemaViewModel(
                     showEnded = state.showEnded
                 )
 
+                val selectedHistory = if (state.selectedHistoryDate.isBlank()) cinemaIsoDate else state.selectedHistoryDate
+                val mergedDates = (listOf(cinemaIsoDate) + state.availableHistoryDates).distinct().sortedDescending()
+
                 state.copy(
                     isLoading = false,
                     isRefreshing = false,
                     isLiveDataSource = result.isLive,
                     dataSourceLabel = if (result.isLive) "נתונים חיים • ${result.dateLabel}" else "נתוני דוגמה (אין חיבור)",
+                    currentCinemaIsoDate = cinemaIsoDate,
+                    selectedHistoryDate = selectedHistory,
+                    availableHistoryDates = mergedDates,
+                    lastSuccessfulUpdateEpochMs = fetchedAt ?: state.lastSuccessfulUpdateEpochMs,
+                    lastSuccessfulUpdateLabel = if (fetchedAt != null) lastUpdateFormatted else state.lastSuccessfulUpdateLabel,
+                    dataFreshnessLabel = computeFreshnessLabel(fetchedAt ?: state.lastSuccessfulUpdateEpochMs, result.isLive),
+                    quickBookStatus = result.quickBookStatus,
+                    sourceTelemetry = result.sourceTelemetry,
                     allScreenings = result.screenings,
                     filteredScreenings = filtered,
                     timelineEvents = events,
@@ -155,8 +293,163 @@ class CinemaViewModel(
                 )
             }
 
+            buildAndPersistValidationSnapshot(
+                screenings = if (result.isLive) result.screenings else emptyList(),
+                telemetry = result.sourceTelemetry,
+                now = now,
+                nowEpochMs = fetchedAt ?: System.currentTimeMillis()
+            )
+
+            if (result.isLive) {
+                attendanceRepository?.recordLiveObservation(
+                    screenings = result.screenings,
+                    cinemaDate = result.cinemaDate,
+                    now = now,
+                    cinemaNowMin = cinemaMinutes
+                )
+                refreshStatsSnapshotOnce()
+                enrichSeatMapsInBackground(result.screenings, result.cinemaDate, forceRefresh = isUserInitiated)
+            } else {
+                attendanceRepository?.recordOfflineAttempt(result.cinemaDate)
+                refreshStatsSnapshotOnce()
+            }
+
             fetchPostersInBackground(result.screenings)
         }
+    }
+
+    private fun refreshActiveSeatsOnly() {
+        val state = _uiState.value
+        if (!state.isLiveDataSource) return
+        val activeWithPid = state.allScreenings.filter {
+            !it.presentationId.isNullOrBlank() && it.status != ScreeningStatus.ENDED
+        }
+        if (activeWithPid.isEmpty()) return
+        val cinemaDate = LocalDate.parse(state.currentCinemaIsoDate)
+        enrichSeatMapsInBackground(state.allScreenings, cinemaDate, forceRefresh = false)
+    }
+
+    private fun enrichSeatMapsInBackground(
+        screenings: List<Screening>,
+        cinemaDate: LocalDate,
+        forceRefresh: Boolean
+    ) {
+        val hasAnyPresentationId = screenings.any { !it.presentationId.isNullOrBlank() && it.status != ScreeningStatus.ENDED }
+        if (!hasAnyPresentationId) return
+
+        seatRefreshJob?.cancel()
+        seatRefreshJob = viewModelScope.launch {
+            _uiState.update { it.copy(seatMapUpdateInProgress = true) }
+            val enriched = repository.enrichWithLiveSeatAvailability(
+                screenings = screenings,
+                seatRepository = seatAvailabilityRepository,
+                forceRefreshActive = forceRefresh
+            )
+            val now = getCurrentIsraelZonedTime()
+            val cinemaMinutes = repository.normalizeCinemaMinutes(now.hour * 60 + now.minute)
+            val anyUnverified = enriched.any { it.seatSummary?.hasUnverifiedStatuses == true }
+            val nowEpoch = System.currentTimeMillis()
+            val (kpis, events) = calculateKpisAndEvents(
+                screenings = enriched,
+                now = now,
+                nowMin = cinemaMinutes,
+                lastUpdatedEpochMs = nowEpoch
+            )
+            val lastUpdateFormatted = Instant.ofEpochMilli(nowEpoch).atZone(jerusalemZone).format(hhmmFormatter)
+
+            _uiState.update { state ->
+                val filtered = applyFilterAndSort(
+                    all = enriched,
+                    nowMin = cinemaMinutes,
+                    type = state.filterType,
+                    query = state.searchQuery,
+                    movieTitle = state.selectedMovieTitle,
+                    sortBy = state.sortBy,
+                    showEnded = state.showEnded
+                )
+                val updatedSelected = state.selectedScreening?.let { sel ->
+                    enriched.firstOrNull { it.id == sel.id } ?: sel
+                }
+                state.copy(
+                    seatMapUpdateInProgress = false,
+                    hasUnverifiedSeatStatuses = anyUnverified,
+                    lastSuccessfulUpdateEpochMs = nowEpoch,
+                    lastSuccessfulUpdateLabel = lastUpdateFormatted,
+                    dataFreshnessLabel = computeFreshnessLabel(nowEpoch, state.isLiveDataSource),
+                    allScreenings = enriched,
+                    filteredScreenings = filtered,
+                    timelineEvents = events,
+                    kpiStats = kpis,
+                    selectedScreening = updatedSelected
+                )
+            }
+
+            buildAndPersistValidationSnapshot(
+                screenings = enriched,
+                telemetry = _uiState.value.sourceTelemetry,
+                now = now,
+                nowEpochMs = nowEpoch
+            )
+
+            attendanceRepository?.recordLiveObservation(
+                screenings = enriched,
+                cinemaDate = cinemaDate,
+                now = now,
+                cinemaNowMin = cinemaMinutes
+            )
+            refreshStatsSnapshotOnce()
+        }
+    }
+
+    private suspend fun buildAndPersistValidationSnapshot(
+        screenings: List<Screening>,
+        telemetry: SourceTelemetryBundle,
+        now: ZonedDateTime,
+        nowEpochMs: Long
+    ) {
+        val snapshot = LiveValidationSnapshotBuilder.buildSnapshot(
+            screenings = screenings,
+            now = now,
+            nowEpochMs = nowEpochMs,
+            telemetry = telemetry
+        )
+        val savedPath = withContext(Dispatchers.IO) {
+            try {
+                val filesDir = getApplication<Application>().filesDir
+                if (filesDir != null) {
+                    val dir = File(filesDir, "validation_snapshots")
+                    LiveValidationSnapshotBuilder.saveSnapshotJson(dir, snapshot).absolutePath
+                } else {
+                    null
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+        _uiState.update { state ->
+            state.copy(
+                latestValidationSnapshot = snapshot,
+                latestValidationJsonPath = savedPath ?: state.latestValidationJsonPath
+            )
+        }
+    }
+
+    private suspend fun refreshStatsSnapshotOnce() {
+        val historyRepo = attendanceRepository ?: return
+        val state = _uiState.value
+        val selectedDate = state.selectedHistoryDate.ifBlank { state.currentCinemaIsoDate }
+        if (selectedDate.isBlank()) return
+        val stats = historyRepo.getDailyStatsOnce(
+            dateIso = selectedDate,
+            todayIso = state.currentCinemaIsoDate,
+            liveScreenings = state.allScreenings,
+            now = getCurrentIsraelZonedTime()
+        )
+        _uiState.update { it.copy(dailyStats = stats) }
+    }
+
+    fun selectHistoryDate(dateIso: String) {
+        _uiState.update { it.copy(selectedHistoryDate = dateIso) }
     }
 
     private fun fetchPostersInBackground(screenings: List<Screening>) {
@@ -208,21 +501,24 @@ class CinemaViewModel(
         }.sortedByDescending { it.screeningCount }
     }
 
-    private fun calculateKpisAndEvents(screenings: List<Screening>, nowMin: Int): Pair<KpiStats, List<CinemaEvent>> {
-        var inside = 0
-        var activeRooms = 0
+    private fun calculateKpisAndEvents(
+        screenings: List<Screening>,
+        now: ZonedDateTime,
+        nowMin: Int,
+        lastUpdatedEpochMs: Long? = null
+    ): Pair<KpiStats, List<CinemaEvent>> {
+        val uniqueScreenings = deduplicateScreenings(screenings)
+        val occupancy = calculateCinemaOccupancy(uniqueScreenings, now, lastUpdatedEpochMs = lastUpdatedEpochMs)
         var out30 = 0
         var out30n = 0
         var in30 = 0
         var in30n = 0
         val events = mutableListOf<CinemaEvent>()
 
-        screenings.forEach { s ->
-            val p = s.estimatedPeople ?: 0
-            when (s.status) {
+        uniqueScreenings.forEach { s ->
+            val p = s.estimatedOccupiedSeats() ?: 0
+            when (s.statusAt(now)) {
                 ScreeningStatus.LIVE -> {
-                    inside += p
-                    activeRooms++
                     if (s.endMin - nowMin <= 30) {
                         out30 += p
                         out30n++
@@ -284,8 +580,10 @@ class CinemaViewModel(
 
         val nextEv = events.firstOrNull()
         val stats = KpiStats(
-            peopleInside = inside,
-            activeHallsCount = activeRooms,
+            peopleInside = occupancy.occupiedSeats,
+            activeHallsCount = occupancy.activeScreenings,
+            activeKnownHallsCount = occupancy.countedScreenings,
+            occupancyResult = occupancy,
             out30MinPeople = out30,
             out30MinHalls = out30n,
             in30MinPeople = in30,
@@ -296,7 +594,7 @@ class CinemaViewModel(
         return Pair(stats, events)
     }
 
-    private fun calculateTypeCounts(screenings: List<Screening>, nowMin: Int): Map<String, Int> {
+    private fun calculateTypeCounts(screenings: List<Screening>): Map<String, Int> {
         val counts = mutableMapOf(
             "ALL" to 0,
             "LIVE" to 0,
@@ -360,7 +658,7 @@ class CinemaViewModel(
             SortOption.ROOM -> visible.sortedWith(
                 compareBy<Screening> { it.roomNumber ?: 99 }.thenBy { it.startMin }
             )
-            SortOption.CROWD -> visible.sortedByDescending { it.estimatedPeople ?: 0 }
+            SortOption.CROWD -> visible.sortedByDescending { it.estimatedOccupiedSeats() ?: 0 }
         }
     }
 

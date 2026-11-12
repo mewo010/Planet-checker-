@@ -412,6 +412,9 @@ fun ScreeningTicketCard(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Crowd Level & Meter
+                val capacityDisplay = screening.roomCapacity()
+                val occupiedDisplay = screening.estimatedOccupiedSeats()
+                val isUnknownAvailability = screening.availabilityRatio == null || occupiedDisplay == null
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -423,7 +426,7 @@ fun ScreeningTicketCard(
                     ) {
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(
-                                text = screening.estimatedPeople?.toString() ?: "?",
+                                text = occupiedDisplay?.toString() ?: "?",
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp
@@ -431,26 +434,40 @@ fun ScreeningTicketCard(
                                 color = Color.White
                             )
                             Text(
-                                text = " / ${screening.capacity ?: "?"} צופים",
+                                text = " / ${capacityDisplay ?: "?"} צופים",
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
                                 color = PlanetTextMuted,
                                 modifier = Modifier.padding(bottom = 1.dp)
                             )
                         }
 
+                        val rightStatusText = when {
+                            screening.seatSummary?.hasUnverifiedStatuses == true && isUnknownAvailability ->
+                                "סטטוס מושבים לא מאומת"
+                            isUnknownAvailability ->
+                                "זמינות לא ידועה"
+                            screening.availabilitySource == com.example.data.model.AvailabilitySource.LIVE_SEAT_MAP ->
+                                "${screening.crowdLevel.label} (${screening.occupancyPercentage}%) • חי"
+                            else ->
+                                "${screening.crowdLevel.label} (${screening.occupancyPercentage}%)"
+                        }
+
                         Text(
-                            text = "${screening.crowdLevel.label} (${screening.occupancyPercentage}%)",
+                            text = rightStatusText,
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 10.sp
                             ),
-                            color = screening.crowdLevel.color
+                            color = if (isUnknownAvailability) PlanetTextMuted else screening.crowdLevel.color
                         )
                     }
 
                     // Linear progress bar for occupancy
                     LinearProgressIndicator(
-                        progress = { (screening.occupancyPercentage / 100f).coerceIn(0f, 1f) },
+                        progress = {
+                            if (isUnknownAvailability) 0f
+                            else (screening.occupancyPercentage / 100f).coerceIn(0f, 1f)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(4.dp)

@@ -59,6 +59,7 @@ import com.example.data.repository.CinemaRepository
 import com.example.ui.components.AudienceBreakdownDialog
 import com.example.ui.components.CinemaHeader
 import com.example.ui.components.CinemaNavigationBar
+import com.example.ui.components.DailyStatsView
 import com.example.ui.components.FilterControlBar
 import com.example.ui.components.HallsStatusGrid
 import com.example.ui.components.KpiCardsSection
@@ -162,6 +163,8 @@ fun CinemaDashboardScreen(
                                 kpiStats = uiState.kpiStats,
                                 cinemaRepository = cinemaRepository,
                                 isLiveDataSource = uiState.isLiveDataSource,
+                                lastUpdatedLabel = uiState.lastSuccessfulUpdateLabel,
+                                dataFreshnessLabel = uiState.dataFreshnessLabel,
                                 onInsideAudienceClick = { showAudienceDialog = true }
                             )
                         }
@@ -262,6 +265,25 @@ fun CinemaDashboardScreen(
                                     )
                                 }
                             }
+
+                            CinemaTab.DAILY_STATS -> {
+                                item(key = "daily_stats_content") {
+                                    DailyStatsView(
+                                        dailyStats = uiState.dailyStats,
+                                        availableDates = uiState.availableHistoryDates,
+                                        selectedDate = uiState.selectedHistoryDate,
+                                        lastSuccessfulUpdateLabel = uiState.lastSuccessfulUpdateLabel,
+                                        dataFreshnessLabel = uiState.dataFreshnessLabel,
+                                        isLiveDataSource = uiState.isLiveDataSource,
+                                        hasUnverifiedSeatStatuses = uiState.hasUnverifiedSeatStatuses,
+                                        occupancyResult = uiState.kpiStats.occupancyResult,
+                                        quickBookStatus = uiState.quickBookStatus,
+                                        validationSnapshot = uiState.latestValidationSnapshot,
+                                        validationJsonPath = uiState.latestValidationJsonPath,
+                                        onSelectDate = { viewModel.selectHistoryDate(it) }
+                                    )
+                                }
+                            }
                         }
 
                         // Footer Note
@@ -292,6 +314,8 @@ fun CinemaDashboardScreen(
                         allScreenings = uiState.allScreenings,
                         totalAudience = uiState.kpiStats.peopleInside,
                         isLiveDataSource = uiState.isLiveDataSource,
+                        occupancyResult = uiState.kpiStats.occupancyResult,
+                        lastUpdatedLabel = uiState.lastSuccessfulUpdateLabel,
                         onDismiss = { showAudienceDialog = false }
                     )
                 }

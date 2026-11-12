@@ -270,6 +270,9 @@ fun ScreeningDetailSheet(
             }
 
             // Crowd & Occupancy Box
+            val effectiveCapacity = screening.roomCapacity()
+            val occupiedSeats = screening.estimatedOccupiedSeats()
+            val hasKnownRatio = screening.availabilityRatio != null && occupiedSeats != null
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -285,19 +288,26 @@ fun ScreeningDetailSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "תפוסת קהל נוכחית",
+                            text = "תפוסת קהל וזמינות מושבים",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = Color.White
                         )
                         Text(
-                            text = "${screening.estimatedPeople ?: "?"} / ${screening.capacity ?: "?"} (${screening.occupancyPercentage}%)",
+                            text = if (hasKnownRatio) {
+                                "$occupiedSeats / ${effectiveCapacity ?: "?"} (${screening.occupancyPercentage}%)"
+                            } else {
+                                "זמינות לא ידועה"
+                            },
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = screening.crowdLevel.color
+                            color = if (hasKnownRatio) screening.crowdLevel.color else PlanetTextMuted
                         )
                     }
 
                     LinearProgressIndicator(
-                        progress = { (screening.occupancyPercentage / 100f).coerceIn(0f, 1f) },
+                        progress = {
+                            if (hasKnownRatio) (screening.occupancyPercentage / 100f).coerceIn(0f, 1f)
+                            else 0f
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
@@ -306,6 +316,77 @@ fun ScreeningDetailSheet(
                         trackColor = PlanetDarkBg,
                         strokeCap = StrokeCap.Round
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "מקור: ${screening.availabilitySource.hebrewLabel}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            color = PlanetTextSecondary
+                        )
+                        val idLabel = buildString {
+                            append(screening.presentationId?.let { "מזהה: $it" } ?: "ללא presentationId")
+                            screening.presentationCode?.let { append(" • קוד $it") }
+                            screening.seatApiHttpCode?.let { append(" • HTTP $it") }
+                        }
+                        Text(
+                            text = idLabel,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = PlanetTextMuted
+                        )
+                    }
+
+                    if (screening.seatSummary == null && screening.seatFetchError != null) {
+                        Text(
+                            text = "סטטוס קריאת מושבים: ${screening.seatFetchState.hebrewLabel} (${screening.seatFetchError})",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = PlanetAmber
+                        )
+                    }
+
+                    screening.seatSummary?.let { summary ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(PlanetDarkBg.copy(alpha = 0.7f))
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "פירוט מפת מושבים (seats-statusV2)",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
+                            )
+                            Text(
+                                text = "סה\"כ אובייקטי מושב: ${summary.totalRawSeatObjects} • מאומתים: ${summary.totalValidSeats} • לא ידועים: ${summary.unknownSeats}",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = PlanetTextSecondary
+                            )
+                            Text(
+                                text = "פנויים: ${summary.availableSeats} | תפוסים: ${summary.occupiedSeats} | שמורים: ${summary.reservedSeats} | חסומים: ${summary.blockedSeats}",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = PlanetTextMuted
+                            )
+                            if (summary.observedPropertyKeys.isNotEmpty()) {
+                                Text(
+                                    text = "שדות JSON גולמיים: ${summary.observedPropertyKeys.joinToString(", ")}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontFamily = FontFamily.Monospace),
+                                    color = PlanetTextMuted
+                                )
+                            }
+                            if (summary.hasUnverifiedStatuses) {
+                                Text(
+                                    text = "שדות סטטוס גולמיים (טרם אומתו מול צבעי האתר): ${summary.rawStatusHistogram.entries.joinToString { "${it.key} (${it.value})" }}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = PlanetAmber
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

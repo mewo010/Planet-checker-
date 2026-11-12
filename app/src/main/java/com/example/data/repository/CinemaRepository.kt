@@ -1,13 +1,28 @@
 package com.example.data.repository
 
+import com.example.data.diagnostics.FeedTelemetry
+import com.example.data.diagnostics.ScreeningSourceSnapshot
+import com.example.data.diagnostics.SourceTelemetryBundle
+import com.example.data.model.AvailabilitySource
 import com.example.data.model.CrowdLevel
 import com.example.data.model.FirstScheduleResponse
 import com.example.data.model.HourlyScheduleResponse
-import com.example.data.model.MovieSummary
+import com.example.data.model.QuickBookSourceStatus
 import com.example.data.model.RawScreening
 import com.example.data.model.RoomType
 import com.example.data.model.Screening
 import com.example.data.model.ScreeningStatus
+import com.example.data.model.SeatAvailabilitySummary
+import com.example.data.model.SeatFetchState
+import com.example.data.model.calculateCinemaOccupancy
+import com.example.data.model.calculateCrowdLevelForRatio
+import com.example.data.model.canonicalSlotKey
+import com.example.data.model.deduplicateScreenings
+import com.example.data.model.mergeScreeningAvailability
+import com.example.data.remote.DefaultPlanetQuickBookClient
+import com.example.data.remote.PlanetQuickBookClient
+import com.example.data.remote.QuickBookFetchResult
+import com.example.util.CinemaDiagnosticsLogger
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
@@ -16,10 +31,17 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
-class CinemaRepository {
+class CinemaRepository(
+    private val quickBookClient: PlanetQuickBookClient = DefaultPlanetQuickBookClient()
+) {
 
     companion object {
         const val FIRST_URL = "https://gist.githubusercontent.com/Gaash14/a12b463cc829c43a7ab0bf8385f1be63/raw/first-schedule.json"
@@ -68,6 +90,8 @@ class CinemaRepository {
         )
     }
 
+    private val jerusalemZone = ZoneId.of("Asia/Jerusalem")
+
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
@@ -82,55 +106,431 @@ class CinemaRepository {
     data class FetchResult(
         val isLive: Boolean,
         val dateLabel: String,
-        val screenings: List<Screening>
+        val cinemaDate: LocalDate,
+        val screenings: List<Screening>,
+        val fetchedAtEpochMs: Long? = null,
+        val quickBookStatus: QuickBookSourceStatus = QuickBookSourceStatus(),
+        val sourceTelemetry: SourceTelemetryBundle = SourceTelemetryBundle()
+    )
+
+    data class ScheduleMergeResult(
+        val cinemaDate: LocalDate,
+        val screenings: List<Screening>,
+        val recoveredMissingFromQuickBook: Int = 0,
+        val recoveredPidsFromQuickBook: Int = 0
     )
 
     suspend fun loadSchedule(currentNowMinutes: Int): FetchResult = withContext(Dispatchers.IO) {
-        try {
-            val baseJson = fetchUrl("$FIRST_URL?nocache=${System.currentTimeMillis()}")
-            val firstAdapter = moshi.adapter(FirstScheduleResponse::class.java)
-            val baseResponse = firstAdapter.fromJson(baseJson)
+        val nowZoned = ZonedDateTime.now(jerusalemZone)
+        val defaultCinemaDate = Screening.resolveIsraelCinemaDayAndMin(nowZoned).first
 
-            var hourlyResponse: HourlyScheduleResponse? = null
+        var baseResponse: FirstScheduleResponse? = null
+        val (baseJson, baseTelemetryInit) = fetchUrlWithTelemetry(
+            sourceName = "FIRST_URL",
+            url = "$FIRST_URL?nocache=${System.currentTimeMillis()}",
+            endpointUrl = FIRST_URL,
+            ttlMs = 24 * 60 * 60 * 1000L
+        )
+        var firstTelemetry = baseTelemetryInit
+        if (baseJson != null) {
             try {
-                val hourlyJson = fetchUrl("$HOURLY_URL?nocache=${System.currentTimeMillis()}")
-                val hourlyAdapter = moshi.adapter(HourlyScheduleResponse::class.java)
-                hourlyResponse = hourlyAdapter.fromJson(hourlyJson)
-            } catch (_: Exception) {
-                // Hourly availability update is optional
+                baseResponse = moshi.adapter(FirstScheduleResponse::class.java).fromJson(baseJson)
+            } catch (e: Exception) {
+                firstTelemetry = firstTelemetry.copy(
+                    succeeded = false,
+                    errorDetail = "JSON parse error: ${e.message}"
+                )
             }
+        }
 
-            val availabilityMap = mutableMapOf<String, Float?>()
-            hourlyResponse?.screenings?.forEach { s ->
-                val key = "${s.room}|${s.start}|${s.title}"
-                availabilityMap[key] = s.availabilityRatio
+        var hourlyResponse: HourlyScheduleResponse? = null
+        val (hourlyJson, hourlyTelemetryInit) = fetchUrlWithTelemetry(
+            sourceName = "HOURLY_URL",
+            url = "$HOURLY_URL?nocache=${System.currentTimeMillis()}",
+            endpointUrl = HOURLY_URL,
+            ttlMs = 60 * 60 * 1000L
+        )
+        var hourlyTelemetry = hourlyTelemetryInit
+        if (hourlyJson != null) {
+            try {
+                hourlyResponse = moshi.adapter(HourlyScheduleResponse::class.java).fromJson(hourlyJson)
+            } catch (e: Exception) {
+                hourlyTelemetry = hourlyTelemetry.copy(
+                    succeeded = false,
+                    errorDetail = "JSON parse error: ${e.message}"
+                )
             }
+        }
 
-            val rawList = baseResponse?.screenings.orEmpty().map { s ->
-                val key = "${s.room}|${s.start}|${s.title}"
-                if (availabilityMap.containsKey(key)) {
-                    s.copy(availabilityRatio = availabilityMap[key])
-                } else s
+        val targetDate = parseDateFlexible(baseResponse?.date) ?: defaultCinemaDate
+        val qbUrl = PlanetQuickBookClient.buildScheduleUrl(targetDate)
+        val qbResult = quickBookClient.fetchDailySchedule(targetDate)
+        val qbScreenings: List<RawScreening> = when (qbResult) {
+            is QuickBookFetchResult.Success -> {
+                qbResult.posterByTitle.forEach { (title, url) ->
+                    val clean = title.replace(Regex("\\(.*?\\)"), "").trim()
+                    if (clean.isNotEmpty() && !posterCache.containsKey(clean)) {
+                        posterCache[clean] = url
+                    }
+                }
+                qbResult.screenings
             }
+            else -> emptyList()
+        }
 
-            if (rawList.isEmpty()) {
-                throw IllegalStateException("Empty screenings from server")
-            }
-
-            val processed = prepareScreenings(rawList, currentNowMinutes)
-            FetchResult(
-                isLive = true,
-                dateLabel = baseResponse?.date ?: "היום",
-                screenings = processed
+        val qbTelemetry = when (qbResult) {
+            is QuickBookFetchResult.Success -> FeedTelemetry(
+                sourceName = "OFFICIAL_QUICKBOOK",
+                endpointUrl = qbUrl,
+                httpStatusCode = qbResult.httpCode,
+                fetchedAtEpochMs = qbResult.fetchedAtEpochMs,
+                ttlMs = 15 * 60 * 1000L,
+                succeeded = true,
+                fromCache = false,
+                cloudflareBlocked = false,
+                errorDetail = null
             )
-        } catch (e: Exception) {
-            val fallback = prepareScreenings(MOCK_SCREENINGS, currentNowMinutes)
-            FetchResult(
-                isLive = false,
-                dateLabel = "נתוני דוגמה (אין חיבור)",
-                screenings = fallback
+            is QuickBookFetchResult.HttpBlockedOrError -> FeedTelemetry(
+                sourceName = "OFFICIAL_QUICKBOOK",
+                endpointUrl = qbUrl,
+                httpStatusCode = qbResult.httpCode,
+                fetchedAtEpochMs = System.currentTimeMillis(),
+                ttlMs = 15 * 60 * 1000L,
+                succeeded = false,
+                fromCache = false,
+                cloudflareBlocked = qbResult.httpCode == 403,
+                errorDetail = qbResult.message
+            )
+            is QuickBookFetchResult.NetworkError -> FeedTelemetry(
+                sourceName = "OFFICIAL_QUICKBOOK",
+                endpointUrl = qbUrl,
+                httpStatusCode = null,
+                fetchedAtEpochMs = System.currentTimeMillis(),
+                ttlMs = 15 * 60 * 1000L,
+                succeeded = false,
+                fromCache = false,
+                cloudflareBlocked = false,
+                errorDetail = qbResult.message
             )
         }
+
+        val telemetryBundle = SourceTelemetryBundle(
+            firstUrl = firstTelemetry,
+            hourlyUrl = hourlyTelemetry,
+            quickBook = qbTelemetry,
+            seatsApiTtlMs = SeatAvailabilityRepository.DEFAULT_CACHE_TTL_MS
+        )
+
+        val mergeResult = mergeAllScheduleSources(
+            baseResponse = baseResponse,
+            hourlyResponse = hourlyResponse,
+            quickBookScreenings = qbScreenings,
+            defaultCinemaDate = defaultCinemaDate,
+            nowMinutes = currentNowMinutes,
+            nowZoned = nowZoned
+        )
+
+        val qbStatus = when (qbResult) {
+            is QuickBookFetchResult.Success -> QuickBookSourceStatus(
+                stateLabel = "זמין (${qbResult.screenings.size} הקרנות)",
+                httpCode = qbResult.httpCode,
+                totalOfficialEvents = qbResult.screenings.size,
+                recoveredMissingScreenings = mergeResult.recoveredMissingFromQuickBook,
+                recoveredPresentationIds = mergeResult.recoveredPidsFromQuickBook,
+                isReachable = true,
+                errorDetail = null
+            )
+            is QuickBookFetchResult.HttpBlockedOrError -> QuickBookSourceStatus(
+                stateLabel = "חסום / שגיאה (HTTP ${qbResult.httpCode})",
+                httpCode = qbResult.httpCode,
+                isReachable = false,
+                errorDetail = qbResult.message
+            )
+            is QuickBookFetchResult.NetworkError -> QuickBookSourceStatus(
+                stateLabel = "לא זמין (שגיאת רשת)",
+                httpCode = null,
+                isReachable = false,
+                errorDetail = qbResult.message
+            )
+        }
+
+        if (mergeResult.screenings.isEmpty()) {
+            val fallback = deduplicateScreenings(
+                prepareScreenings(
+                    rawList = MOCK_SCREENINGS,
+                    nowMinutes = currentNowMinutes,
+                    defaultDate = defaultCinemaDate,
+                    defaultSource = AvailabilitySource.SAMPLE_FALLBACK,
+                    nowZoned = nowZoned
+                )
+            )
+            return@withContext FetchResult(
+                isLive = false,
+                dateLabel = "נתוני דוגמה (אין חיבור)",
+                cinemaDate = defaultCinemaDate,
+                screenings = fallback,
+                fetchedAtEpochMs = null,
+                quickBookStatus = qbStatus,
+                sourceTelemetry = telemetryBundle
+            )
+        }
+
+        val fetchedAt = System.currentTimeMillis()
+        CinemaDiagnosticsLogger.logOccupancyCalculation(
+            "loadSchedule",
+            calculateCinemaOccupancy(mergeResult.screenings, nowZoned, lastUpdatedEpochMs = fetchedAt)
+        )
+
+        FetchResult(
+            isLive = true,
+            dateLabel = baseResponse?.date ?: mergeResult.cinemaDate.toString(),
+            cinemaDate = mergeResult.cinemaDate,
+            screenings = mergeResult.screenings,
+            fetchedAtEpochMs = fetchedAt,
+            quickBookStatus = qbStatus,
+            sourceTelemetry = telemetryBundle
+        )
+    }
+
+    /**
+     * Backward-compatible schedule merger combining Gist base + hourly feeds.
+     */
+    fun mergeRawSchedules(
+        baseResponse: FirstScheduleResponse?,
+        hourlyResponse: HourlyScheduleResponse?,
+        defaultCinemaDate: LocalDate,
+        nowMinutes: Int,
+        nowZoned: ZonedDateTime = ZonedDateTime.now(jerusalemZone)
+    ): Pair<LocalDate, List<Screening>> {
+        val result = mergeAllScheduleSources(
+            baseResponse = baseResponse,
+            hourlyResponse = hourlyResponse,
+            quickBookScreenings = emptyList(),
+            defaultCinemaDate = defaultCinemaDate,
+            nowMinutes = nowMinutes,
+            nowZoned = nowZoned
+        )
+        return result.cinemaDate to result.screenings
+    }
+
+    /**
+     * Reconciles base schedule (FIRST_URL), hourly feed (HOURLY_URL), and Planet's official QuickBook API:
+     * - Matches screenings across normalized room numbers, formatted start times, titles, and presentationIds.
+     * - Recovers missing presentationIds, presentationCodes, and any active/upcoming shows omitted by Gist feeds.
+     * - Preserves hourly/base ratios cleanly and never overwrites valid ratios with nulls.
+     */
+    fun mergeAllScheduleSources(
+        baseResponse: FirstScheduleResponse?,
+        hourlyResponse: HourlyScheduleResponse?,
+        quickBookScreenings: List<RawScreening>,
+        defaultCinemaDate: LocalDate,
+        nowMinutes: Int,
+        nowZoned: ZonedDateTime = ZonedDateTime.now(jerusalemZone)
+    ): ScheduleMergeResult {
+        val parsedHeaderDate = parseDateFlexible(baseResponse?.date) ?: defaultCinemaDate
+        val firstList = baseResponse?.screenings.orEmpty()
+        val firstBySlotKey = linkedMapOf<String, RawScreening>()
+        val firstByPid = linkedMapOf<String, RawScreening>()
+        for (item in firstList) {
+            firstBySlotKey[canonicalSlotKey(item.room, item.start, item.title)] = item
+            item.resolvedPresentationId()?.let { firstByPid[it] = item }
+        }
+
+        val basePrepared = prepareScreenings(
+            rawList = firstList,
+            nowMinutes = nowMinutes,
+            defaultDate = parsedHeaderDate,
+            defaultSource = AvailabilitySource.SCHEDULE_FEED,
+            nowZoned = nowZoned
+        )
+
+        val hourlyList = hourlyResponse?.screenings.orEmpty()
+        val hourlyBySlotKey = linkedMapOf<String, RawScreening>()
+        val hourlyByPid = linkedMapOf<String, RawScreening>()
+        for (item in hourlyList) {
+            hourlyBySlotKey[canonicalSlotKey(item.room, item.start, item.title)] = item
+            item.resolvedPresentationId()?.let { hourlyByPid[it] = item }
+        }
+
+        val qbBySlotKey = linkedMapOf<String, RawScreening>()
+        val qbByPid = linkedMapOf<String, RawScreening>()
+        for (item in quickBookScreenings) {
+            qbBySlotKey[canonicalSlotKey(item.room, item.start, item.title)] = item
+            item.resolvedPresentationId()?.let { qbByPid[it] = item }
+        }
+
+        val ratioMap = linkedMapOf<String, Float?>()
+        hourlyBySlotKey.forEach { (slotKey, raw) ->
+            ratioMap[slotKey] = raw.availabilityRatio
+        }
+        qbBySlotKey.forEach { (slotKey, raw) ->
+            if (ratioMap[slotKey] == null && raw.availabilityRatio != null) {
+                ratioMap[slotKey] = raw.availabilityRatio
+            }
+        }
+
+        var recoveredPids = 0
+
+        val updatedBase = basePrepared.map { screening ->
+            val slotKey = screening.canonicalSlotKey()
+            val hourlyItem = hourlyBySlotKey[slotKey]
+                ?: screening.presentationId?.let { hourlyByPid[it] }
+            val qbItem = qbBySlotKey[slotKey]
+                ?: (hourlyItem?.resolvedPresentationId() ?: screening.presentationId)?.let { qbByPid[it] }
+
+            val hourlyPresId = hourlyItem?.resolvedPresentationId()
+            val qbPresId = qbItem?.resolvedPresentationId()
+            val resolvedPid = screening.presentationId ?: hourlyPresId ?: qbPresId
+            if (screening.presentationId == null && hourlyPresId == null && qbPresId != null) {
+                recoveredPids++
+            }
+            val resolvedCode = screening.presentationCode
+                ?: hourlyItem?.presentationCode?.takeIf { it.isNotBlank() }
+                ?: qbItem?.presentationCode?.takeIf { it.isNotBlank() }
+            val resolvedVenueId = hourlyItem?.venueTypeId ?: qbItem?.venueTypeId ?: screening.venueTypeId
+
+            screening.copy(
+                presentationId = resolvedPid,
+                presentationCode = resolvedCode,
+                venueTypeId = resolvedVenueId
+            )
+        }.let { list ->
+            mergeScreeningAvailability(list, scheduleRatiosByKey = ratioMap)
+        }
+
+        // Include any extra hourly screenings missing from first-schedule.json
+        val seenKeys = updatedBase.mapTo(mutableSetOf()) { it.canonicalSlotKey() }
+        val seenPids = updatedBase.mapNotNullTo(mutableSetOf()) { it.presentationId }
+        val extraHourlyRaw = hourlyList.filter { raw ->
+            val pid = raw.resolvedPresentationId()
+            val slotKey = canonicalSlotKey(raw.room, raw.start, raw.title)
+            slotKey !in seenKeys && (pid == null || pid !in seenPids)
+        }.map { raw ->
+            val slotKey = canonicalSlotKey(raw.room, raw.start, raw.title)
+            val qbMatch = qbBySlotKey[slotKey] ?: raw.resolvedPresentationId()?.let { qbByPid[it] }
+            if (qbMatch != null) {
+                val qbPid = qbMatch.resolvedPresentationId()
+                if (raw.resolvedPresentationId() == null && qbPid != null) recoveredPids++
+                raw.copy(
+                    presentationId = raw.resolvedPresentationId() ?: qbPid,
+                    presentationCode = raw.presentationCode ?: qbMatch.presentationCode
+                )
+            } else raw
+        }
+        val extraHourlyPrepared = prepareScreenings(
+            rawList = extraHourlyRaw,
+            nowMinutes = nowMinutes,
+            defaultDate = parsedHeaderDate,
+            defaultSource = AvailabilitySource.HOURLY_FEED,
+            nowZoned = nowZoned
+        )
+
+        val seenKeysAfterHourly = (updatedBase + extraHourlyPrepared).mapTo(mutableSetOf()) { it.canonicalSlotKey() }
+        val seenPidsAfterHourly = (updatedBase + extraHourlyPrepared).mapNotNullTo(mutableSetOf()) { it.presentationId }
+
+        val extraQuickBookRaw = quickBookScreenings.filter { raw ->
+            val pid = raw.resolvedPresentationId()
+            val slotKey = canonicalSlotKey(raw.room, raw.start, raw.title)
+            slotKey !in seenKeysAfterHourly && (pid == null || pid !in seenPidsAfterHourly)
+        }
+        val extraQuickBookPrepared = prepareScreenings(
+            rawList = extraQuickBookRaw,
+            nowMinutes = nowMinutes,
+            defaultDate = parsedHeaderDate,
+            defaultSource = AvailabilitySource.OFFICIAL_QUICKBOOK,
+            nowZoned = nowZoned
+        )
+
+        val combined = deduplicateScreenings(updatedBase + extraHourlyPrepared + extraQuickBookPrepared)
+            .map { screening ->
+                val slotKey = screening.canonicalSlotKey()
+                val pid = screening.presentationId
+                val firstItem = firstBySlotKey[slotKey] ?: pid?.let { firstByPid[it] }
+                val hourlyItem = hourlyBySlotKey[slotKey] ?: pid?.let { hourlyByPid[it] }
+                val qbItem = qbBySlotKey[slotKey] ?: pid?.let { qbByPid[it] }
+
+                val trace = ScreeningSourceSnapshot(
+                    cinemaId = PlanetQuickBookClient.DEFAULT_CINEMA_ID,
+                    cinemaDate = (screening.date ?: parsedHeaderDate).toString(),
+                    inFirstUrl = firstItem != null,
+                    firstUrlRatio = firstItem?.availabilityRatio,
+                    firstUrlPresentationId = firstItem?.resolvedPresentationId(),
+                    firstUrlEnd = firstItem?.end?.takeIf { it.isNotBlank() },
+                    inHourlyUrl = hourlyItem != null,
+                    hourlyUrlRatio = hourlyItem?.availabilityRatio,
+                    hourlyUrlPresentationId = hourlyItem?.resolvedPresentationId(),
+                    hourlyUrlEnd = hourlyItem?.end?.takeIf { it.isNotBlank() },
+                    inQuickBook = qbItem != null,
+                    quickBookPresentationId = qbItem?.resolvedPresentationId(),
+                    quickBookPresentationCode = qbItem?.presentationCode?.takeIf { it.isNotBlank() },
+                    quickBookSoldOut = qbItem?.soldOut,
+                    quickBookEnd = qbItem?.end?.takeIf { it.isNotBlank() }
+                )
+                screening.copy(sourceSnapshot = trace)
+            }
+
+        return ScheduleMergeResult(
+            cinemaDate = parsedHeaderDate,
+            screenings = combined,
+            recoveredMissingFromQuickBook = extraQuickBookPrepared.size,
+            recoveredPidsFromQuickBook = recoveredPids
+        )
+    }
+
+    /**
+     * Fetches live seat maps for non-ended screenings that provide a real presentationId.
+     * - Records explicit [SeatFetchResult] for every active/upcoming candidate (Success, NetworkError,
+     *   AuthRequired, EmptyOrInvalid, MissingPresentationId) so failures are surfaced instead of 0.
+     * - Skips ENDED screenings so post-end seat clears never corrupt historical attendance.
+     */
+    suspend fun enrichWithLiveSeatAvailability(
+        screenings: List<Screening>,
+        seatRepository: SeatAvailabilityRepository,
+        forceRefreshActive: Boolean = false
+    ): List<Screening> = withContext(Dispatchers.IO) {
+        val candidates = screenings.filter { it.status != ScreeningStatus.ENDED }
+        if (candidates.isEmpty()) return@withContext screenings
+
+        val summaries = mutableMapOf<String, SeatAvailabilitySummary>()
+        val fetchResults = mutableMapOf<String, SeatFetchResult>()
+
+        for (screening in candidates) {
+            val pid = screening.presentationId?.trim()?.takeIf { it.isNotEmpty() }
+            if (pid == null) {
+                if (screening.availabilityRatio == null) {
+                    fetchResults[screening.id] = SeatFetchResult.MissingPresentationId
+                }
+                continue
+            }
+
+            val ttl = if (screening.status == ScreeningStatus.LIVE || screening.status == ScreeningStatus.ENDED_RECENTLY) {
+                SeatAvailabilityRepository.DEFAULT_CACHE_TTL_MS
+            } else {
+                SeatAvailabilityRepository.UPCOMING_CACHE_TTL_MS
+            }
+            val result = seatRepository.fetchSeatAvailability(
+                presentationId = pid,
+                venueTypeId = screening.venueTypeId,
+                isReserved = 1,
+                cacheTtlMs = ttl,
+                forceRefresh = forceRefreshActive && screening.status == ScreeningStatus.LIVE
+            )
+            fetchResults[pid] = result
+            if (result is SeatFetchResult.Success) {
+                summaries[pid] = result.summary
+            }
+        }
+
+        val updated = mergeScreeningAvailability(
+            screenings = screenings,
+            seatSummariesByKey = summaries,
+            seatFetchResultsByKey = fetchResults
+        )
+        CinemaDiagnosticsLogger.logOccupancyCalculation(
+            "enrichWithLiveSeatAvailability",
+            calculateCinemaOccupancy(updated)
+        )
+        updated
     }
 
     suspend fun getPosterUrl(movieTitle: String): String? = withContext(Dispatchers.IO) {
@@ -164,7 +564,13 @@ class CinemaRepository {
         return@withContext null
     }
 
-    fun prepareScreenings(rawList: List<RawScreening>, nowMinutes: Int): List<Screening> {
+    fun prepareScreenings(
+        rawList: List<RawScreening>,
+        nowMinutes: Int,
+        defaultDate: LocalDate? = null,
+        defaultSource: AvailabilitySource = AvailabilitySource.SCHEDULE_FEED,
+        nowZoned: ZonedDateTime? = null
+    ): List<Screening> {
         return rawList.mapNotNull { raw ->
             val startParsed = parseTime(raw.start) ?: return@mapNotNull null
             val endParsed = parseTime(raw.end) ?: return@mapNotNull null
@@ -181,25 +587,32 @@ class CinemaRepository {
 
             val ratio = raw.availabilityRatio?.takeIf { it in 0.0f..1.0f }
             val occupancyPct = if (ratio != null) {
-                ((1f - ratio) * 100f).toInt().coerceIn(0, 100)
+                ((1f - ratio) * 100f).roundToInt().coerceIn(0, 100)
             } else 0
 
             val estimatedPeople = if (capacity != null && ratio != null) {
-                (capacity * (1f - ratio.coerceIn(0f, 1f))).toInt()
+                (capacity * (1.0 - ratio.toDouble())).roundToInt().coerceIn(0, capacity)
             } else null
 
-            val status = calculateStatus(s, e, nowMinutes)
-            val crowdLevel = calculateCrowdLevel(ratio)
+            val crowdLevel = calculateCrowdLevelForRatio(ratio)
             val poster = posterCache[raw.title.replace(Regex("\\(.*?\\)"), "").trim()]
+            val screeningDate = parseDateFlexible(raw.date) ?: defaultDate
+            val pid = raw.resolvedPresentationId()
+            val source = if (ratio == null) AvailabilitySource.NONE else defaultSource
+            val fetchState = when {
+                ratio != null -> SeatFetchState.SUCCESS
+                pid == null -> SeatFetchState.MISSING_PRESENTATION_ID
+                else -> SeatFetchState.NONE
+            }
 
-            Screening(
-                id = "${raw.room}_${raw.start}_${raw.title}",
-                title = raw.title,
-                room = raw.room,
+            val prelim = Screening(
+                id = "${raw.room.trim()}_${raw.start.trim()}_${raw.title.trim()}",
+                title = raw.title.trim(),
+                room = raw.room.trim(),
                 roomNumber = roomNum,
                 roomType = roomType,
-                startStr = raw.start,
-                endStr = raw.end,
+                startStr = raw.start.trim(),
+                endStr = raw.end.trim(),
                 startMin = s,
                 endMin = e,
                 entryMin = entry,
@@ -207,9 +620,102 @@ class CinemaRepository {
                 availabilityRatio = ratio,
                 occupancyPercentage = occupancyPct,
                 estimatedPeople = estimatedPeople,
-                status = status,
+                status = calculateStatus(s, e, nowMinutes),
                 crowdLevel = crowdLevel,
-                posterUrl = poster
+                posterUrl = poster,
+                presentationId = pid,
+                presentationCode = raw.presentationCode?.trim()?.takeIf { it.isNotEmpty() },
+                venueTypeId = raw.venueTypeId ?: 1,
+                date = screeningDate,
+                seatSummary = null,
+                availabilitySource = source,
+                seatFetchState = fetchState,
+                lastSeatUpdateEpochMs = null
+            )
+
+            if (nowZoned != null) {
+                prelim.copy(status = prelim.statusAt(nowZoned))
+            } else {
+                prelim
+            }
+        }
+    }
+
+    fun currentIsraelCinemaDate(): LocalDate {
+        val now = ZonedDateTime.now(ZoneId.of("Asia/Jerusalem"))
+        val rawMinutes = now.hour * 60 + now.minute
+        return if (rawMinutes < 420) now.toLocalDate().minusDays(1) else now.toLocalDate()
+    }
+
+    fun parseDateFlexible(rawDate: String?): LocalDate? {
+        val trimmed = rawDate?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val patterns = listOf(
+            DateTimeFormatter.ISO_LOCAL_DATE,
+            DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+            DateTimeFormatter.ofPattern("dd.MM.yyyy"),
+            DateTimeFormatter.ofPattern("d/M/yyyy")
+        )
+        for (fmt in patterns) {
+            try {
+                return LocalDate.parse(trimmed, fmt)
+            } catch (_: Exception) {
+                // Try next format
+            }
+        }
+        return null
+    }
+
+    private fun fetchUrlWithTelemetry(
+        sourceName: String,
+        url: String,
+        endpointUrl: String,
+        ttlMs: Long?
+    ): Pair<String?, FeedTelemetry> {
+        val attemptAt = System.currentTimeMillis()
+        return try {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "PlanetChecker-Android/1.0")
+                .build()
+            httpClient.newCall(request).execute().use { response ->
+                val code = response.code
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    return null to FeedTelemetry(
+                        sourceName = sourceName,
+                        endpointUrl = endpointUrl,
+                        httpStatusCode = code,
+                        fetchedAtEpochMs = attemptAt,
+                        ttlMs = ttlMs,
+                        succeeded = false,
+                        fromCache = false,
+                        cloudflareBlocked = code == 403,
+                        errorDetail = "HTTP $code"
+                    )
+                }
+                body to FeedTelemetry(
+                    sourceName = sourceName,
+                    endpointUrl = endpointUrl,
+                    httpStatusCode = code,
+                    fetchedAtEpochMs = System.currentTimeMillis(),
+                    ttlMs = ttlMs,
+                    succeeded = true,
+                    fromCache = false,
+                    cloudflareBlocked = false,
+                    errorDetail = null
+                )
+            }
+        } catch (e: Exception) {
+            null to FeedTelemetry(
+                sourceName = sourceName,
+                endpointUrl = endpointUrl,
+                httpStatusCode = null,
+                fetchedAtEpochMs = attemptAt,
+                ttlMs = ttlMs,
+                succeeded = false,
+                fromCache = false,
+                cloudflareBlocked = false,
+                errorDetail = e.message ?: "Network error"
             )
         }
     }
@@ -226,10 +732,11 @@ class CinemaRepository {
     }
 
     private fun parseTime(timeStr: String): Int? {
-        val parts = timeStr.split(":")
+        val parts = timeStr.trim().split(":")
         if (parts.size < 2) return null
         val h = parts[0].trim().toIntOrNull() ?: return null
         val m = parts[1].trim().toIntOrNull() ?: return null
+        if (h !in 0..23 || m !in 0..59) return null
         return h * 60 + m
     }
 
@@ -263,17 +770,6 @@ class CinemaRepository {
             nowMin < startMin -> ScreeningStatus.UPCOMING
             nowMin < endMin + ENDED_KEEP -> ScreeningStatus.ENDED_RECENTLY
             else -> ScreeningStatus.ENDED
-        }
-    }
-
-    private fun calculateCrowdLevel(availabilityRatio: Float?): CrowdLevel {
-        if (availabilityRatio == null) return CrowdLevel.UNKNOWN
-        val occupancy = ((1f - availabilityRatio) * 100f).toInt()
-        return when {
-            occupancy > 85 -> CrowdLevel.VERY_BUSY
-            occupancy > 60 -> CrowdLevel.BUSY
-            occupancy > 30 -> CrowdLevel.MEDIUM
-            else -> CrowdLevel.QUIET
         }
     }
 }

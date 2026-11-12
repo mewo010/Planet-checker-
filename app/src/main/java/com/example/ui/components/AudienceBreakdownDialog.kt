@@ -54,9 +54,12 @@ fun AudienceBreakdownDialog(
     allScreenings: List<Screening>,
     totalAudience: Int,
     isLiveDataSource: Boolean,
+    occupancyResult: com.example.data.model.OccupancyResult = com.example.data.model.OccupancyResult(),
+    lastUpdatedLabel: String = "",
     onDismiss: () -> Unit
 ) {
-    val liveScreenings = allScreenings.filter { it.status == ScreeningStatus.LIVE }
+    val liveScreenings = com.example.data.model.deduplicateScreenings(allScreenings)
+        .filter { it.status == ScreeningStatus.LIVE }
 
     BasicAlertDialog(
         onDismissRequest = onDismiss,
@@ -79,7 +82,7 @@ fun AudienceBreakdownDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -94,14 +97,20 @@ fun AudienceBreakdownDialog(
                         )
                         Icon(
                             imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = "נתוני אמת מאומתים",
-                            tint = PlanetEmeraldLight,
+                            contentDescription = "סטטוס נתונים",
+                            tint = if (occupancyResult.isComplete) PlanetEmeraldLight else com.example.ui.theme.PlanetAmber,
                             modifier = Modifier.size(16.dp)
                         )
                     }
 
+                    val subHeader = buildString {
+                        append(if (isLiveDataSource) "אומדן לפי זמינות מושבים ולוח הקרנות" else "נתוני דוגמה (אין חיבור)")
+                        if (lastUpdatedLabel.isNotBlank() && lastUpdatedLabel != "טרם עודכן") {
+                            append(" • עודכן $lastUpdatedLabel")
+                        }
+                    }
                     Text(
-                        text = if (isLiveDataSource) "נתוני אמת מחושבים ישירות מקופות פלאנט" else "נתוני דוגמה (אין חיבור)",
+                        text = subHeader,
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                         color = if (isLiveDataSource) PlanetEmeraldLight else PlanetTextMuted
                     )
@@ -128,42 +137,76 @@ fun AudienceBreakdownDialog(
                     .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                     .padding(12.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "סה\"כ נוכחים כעת בקולנוע",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                            color = PlanetTextSecondary
-                        )
-                        Text(
-                            text = "$totalAudience צופים",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 22.sp
-                            ),
-                            color = PlanetRoseLight
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "סה\"כ מושבים תפוסים פעילים",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = PlanetTextSecondary
+                            )
+                            Text(
+                                text = if (occupancyResult.unknownOccupancy) "לא ידוע" else "$totalAudience צופים",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 22.sp
+                                ),
+                                color = PlanetRoseLight
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(PlanetRose.copy(alpha = 0.15f))
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = "${liveScreenings.size} אולמות מקרינים • ${occupancyResult.completenessPercentage}% שלמות",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    ),
+                                    color = PlanetRoseLight
+                                )
+                            }
+                            Text(
+                                text = "מאומתים: ${occupancyResult.verifiedOccupiedSeats} • אומדן יחס: ${occupancyResult.estimatedOccupiedSeats}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = PlanetTextSecondary
+                            )
+                        }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(PlanetRose.copy(alpha = 0.15f))
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
+                    if (occupancyResult.activeScreenings > 0 && !occupancyResult.isComplete) {
                         Text(
-                            text = "${liveScreenings.size} אולמות מקרינים",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
-                            ),
-                            color = PlanetRoseLight
+                            text = "חושבו ${occupancyResult.countedScreenings}/${occupancyResult.activeScreenings} | חסר PID: ${occupancyResult.missingPresentationIdScreenings} | לא מאומת: ${occupancyResult.unverifiedSeatStatusScreenings} | נכשלו: ${occupancyResult.failedScreenings}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = com.example.ui.theme.PlanetGold
                         )
                     }
+                }
+            }
+
+            if (!occupancyResult.isComplete && occupancyResult.activeScreenings > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(com.example.ui.theme.PlanetAmberGlow)
+                        .border(1.dp, com.example.ui.theme.PlanetAmber.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(
+                        text = "חלקי: קיימות הקרנות פעילות ללא נתוני מושבים מאומתים (${occupancyResult.missingScreenings} חסרות, ${occupancyResult.failedScreenings} נכשלו). הקרנות אלו מסומנות כ'?' ואינן נספרות באפס שקרי.",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 14.sp),
+                        color = com.example.ui.theme.PlanetGold
+                    )
                 }
             }
 
@@ -191,7 +234,7 @@ fun AudienceBreakdownDialog(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(280.dp),
+                        .height(260.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(liveScreenings, key = { it.id }) { screening ->
@@ -200,9 +243,9 @@ fun AudienceBreakdownDialog(
                 }
             }
 
-            // Verification explanation
+            // Honest explanation
             Text(
-                text = "✓ נתון זה הינו נתון אמת מדויק. הוא מחושב ישירות מתפוסת המושבים (1 פחות אחוז המקומות הפנויים בקופות) מוכפל בקיבולת הרשמית של כל אולם.",
+                text = "מפריד בין מושבים מאומתים ממפת המושבים החיה (תפוסים + שמורים) לבין אומדני יחס קיבולת. נתונים מסומנים אינם סריקת כרטיס בפועל בשער.",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 14.sp),
                 color = PlanetTextMuted
             )
@@ -265,28 +308,50 @@ private fun ActiveRoomRow(screening: Screening) {
                     }
 
                     Text(
-                        text = screening.title,
+                        text = "${screening.title} • ${screening.startStr}-${screening.endStr}",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                         color = PlanetTextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    val diagNote = buildString {
+                        append(screening.presentationId?.let { "PID: $it" } ?: "ללא PID")
+                        screening.seatApiHttpCode?.let { append(" • HTTP $it") }
+                        screening.seatSummary?.let { s ->
+                            append(" • מאומת ${s.totalValidSeats}/לא ידוע ${s.unknownSeats}")
+                        }
+                    }
+                    Text(
+                        text = diagNote,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                        color = PlanetTextMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
+            val occupied = screening.estimatedOccupiedSeats()
+            val kind = screening.occupancyCountKind()
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "${screening.estimatedPeople ?: 0} צופים",
+                    text = if (occupied != null) "$occupied צופים" else "? צופים",
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     ),
-                    color = PlanetRoseLight
+                    color = if (occupied != null) PlanetRoseLight else PlanetTextMuted
                 )
+                val subStatus = if (occupied != null) {
+                    "${screening.occupancyPercentage}% • ${kind.hebrewLabel}"
+                } else {
+                    screening.seatFetchState.hebrewLabel
+                }
                 Text(
-                    text = "${screening.occupancyPercentage}% תפוסה",
+                    text = subStatus,
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                    color = screening.crowdLevel.color
+                    color = if (occupied != null) screening.crowdLevel.color else com.example.ui.theme.PlanetAmber
                 )
             }
         }

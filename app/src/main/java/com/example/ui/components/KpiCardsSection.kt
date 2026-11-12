@@ -61,6 +61,8 @@ fun KpiCardsSection(
     kpiStats: KpiStats,
     cinemaRepository: CinemaRepository,
     isLiveDataSource: Boolean = true,
+    lastUpdatedLabel: String = "",
+    dataFreshnessLabel: String = "",
     onInsideAudienceClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -73,16 +75,52 @@ fun KpiCardsSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            val occ = kpiStats.occupancyResult
+            val incompleteCount = occ.missingScreenings + occ.failedScreenings
+            val subtitleText = buildString {
+                if (occ.activeScreenings == 0) {
+                    append("${kpiStats.activeHallsCount} אולמות פעילים")
+                } else if (!occ.isComplete) {
+                    append("חושבו ${occ.countedScreenings}/${occ.activeScreenings}")
+                    if (occ.failedScreenings > 0) append(" (${occ.failedScreenings} שגיאות)")
+                    else if (incompleteCount > 0) append(" ($incompleteCount חסרים)")
+                } else {
+                    append("${occ.activeScreenings} אולמות פעילים")
+                }
+                if (lastUpdatedLabel.isNotBlank() && lastUpdatedLabel != "טרם עודכן") {
+                    append(" • $lastUpdatedLabel")
+                }
+            }
+            val insideValue = if (occ.unknownOccupancy) "?" else kpiStats.peopleInside.toString()
+            val insideBadge = when {
+                !isLiveDataSource -> "דוגמה"
+                occ.unknownOccupancy -> "אין נתונים ↗"
+                !occ.isComplete -> "חלקי ↗"
+                dataFreshnessLabel.startsWith("נתון ישן") -> "לא עדכני ↗"
+                else -> "אומדן חי ↗"
+            }
+            val badgeContainer = when {
+                occ.unknownOccupancy || !occ.isComplete || !isLiveDataSource || dataFreshnessLabel.startsWith("נתון ישן") ->
+                    PlanetAmber.copy(alpha = 0.2f)
+                else -> PlanetEmerald.copy(alpha = 0.15f)
+            }
+            val badgeTextColor = when {
+                occ.unknownOccupancy || !occ.isComplete || !isLiveDataSource || dataFreshnessLabel.startsWith("נתון ישן") ->
+                    PlanetGold
+                else -> PlanetEmeraldLight
+            }
             KpiCard(
                 title = "בקולנוע כרגע",
-                value = kpiStats.peopleInside.toString(),
-                subtitle = "${kpiStats.activeHallsCount} אולמות פעילים",
+                value = insideValue,
+                subtitle = subtitleText,
                 icon = Icons.Filled.Group,
                 accentColor = PlanetRose,
                 accentGlow = PlanetRoseGlow,
                 valueColor = Color.White,
                 onClick = onInsideAudienceClick,
-                badgeText = if (isLiveDataSource) "נתון אמת ↗" else "דוגמה",
+                badgeText = insideBadge,
+                badgeBgColor = badgeContainer,
+                badgeTextColor = badgeTextColor,
                 testTag = "kpi_inside",
                 modifier = Modifier.weight(1f)
             )
@@ -158,6 +196,8 @@ private fun KpiCard(
     isTextValue: Boolean = false,
     onClick: (() -> Unit)? = null,
     badgeText: String? = null,
+    badgeBgColor: Color = PlanetEmerald.copy(alpha = 0.15f),
+    badgeTextColor: Color = PlanetEmeraldLight,
     testTag: String = ""
 ) {
     val clickModifier = if (onClick != null) {
@@ -223,7 +263,7 @@ private fun KpiCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(PlanetEmerald.copy(alpha = 0.15f))
+                            .background(badgeBgColor)
                             .padding(horizontal = 5.dp, vertical = 2.dp)
                     ) {
                         Text(
@@ -232,7 +272,7 @@ private fun KpiCard(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 9.sp
                             ),
-                            color = PlanetEmeraldLight
+                            color = badgeTextColor
                         )
                     }
                 }

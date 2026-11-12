@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Timeline
@@ -24,27 +25,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CinemaTab
-import com.example.ui.theme.PlanetBorder
 import com.example.ui.theme.PlanetBorderSubtle
-import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
 import com.example.ui.theme.PlanetRose
-import com.example.ui.theme.PlanetRoseLight
-import com.example.ui.theme.PlanetSurface
 import com.example.ui.theme.PlanetSurfaceGlass
-import com.example.ui.theme.PlanetTextMuted
 import com.example.ui.theme.PlanetTextSecondary
 
 @Composable
@@ -57,7 +52,7 @@ fun CinemaNavigationBar(
         modifier = modifier
             .fillMaxWidth()
             .background(PlanetSurfaceGlass)
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Row(
             modifier = Modifier
@@ -67,7 +62,7 @@ fun CinemaNavigationBar(
                 .background(PlanetDarkBg)
                 .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(12.dp))
                 .padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             CinemaTab.values().forEach { tab ->
@@ -77,6 +72,7 @@ fun CinemaNavigationBar(
                     CinemaTab.SCHEDULE -> Icons.Filled.CalendarMonth
                     CinemaTab.TIMELINE -> Icons.Filled.Timeline
                     CinemaTab.HALLS_MAP -> Icons.Filled.GridOn
+                    CinemaTab.DAILY_STATS -> Icons.Filled.BarChart
                 }
 
                 val targetBg = if (isSelected) PlanetRose else Color.Transparent
@@ -105,22 +101,24 @@ fun CinemaNavigationBar(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(horizontal = 4.dp)
                     ) {
                         Icon(
                             imageVector = icon,
                             contentDescription = tab.title,
                             tint = animatedContentColor,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                         Text(
                             text = tab.title,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             ),
                             color = animatedContentColor,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
