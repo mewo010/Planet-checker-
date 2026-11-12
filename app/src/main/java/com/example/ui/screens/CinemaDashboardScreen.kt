@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -26,31 +27,21 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.GridOn
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MeetingRoom
-import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +58,7 @@ import com.example.data.model.CinemaUiState
 import com.example.data.repository.CinemaRepository
 import com.example.ui.components.AudienceBreakdownDialog
 import com.example.ui.components.CinemaHeader
+import com.example.ui.components.CinemaNavigationBar
 import com.example.ui.components.FilterControlBar
 import com.example.ui.components.HallsStatusGrid
 import com.example.ui.components.KpiCardsSection
@@ -75,10 +67,9 @@ import com.example.ui.components.ScreeningDetailSheet
 import com.example.ui.components.ScreeningTicketCard
 import com.example.ui.components.TimelineView
 import com.example.ui.theme.PlanetBorder
+import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
-import com.example.ui.theme.PlanetGold
-import com.example.ui.theme.PlanetNavy
 import com.example.ui.theme.PlanetRose
 import com.example.ui.theme.PlanetRoseLight
 import com.example.ui.theme.PlanetSurface
@@ -99,9 +90,6 @@ fun CinemaDashboardScreen(
     val coroutineScope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val showScrollToTop by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 2 }
-    }
     var showAudienceDialog by remember { mutableStateOf(false) }
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -109,39 +97,23 @@ fun CinemaDashboardScreen(
             contentWindowInsets = WindowInsets.safeDrawing,
             containerColor = PlanetDarkBg,
             topBar = {
-                CinemaHeader(
-                    currentTime = uiState.currentIsraelTime,
-                    dataSourceLabel = uiState.dataSourceLabel,
-                    isLive = uiState.isLiveDataSource,
-                    isRefreshing = uiState.isRefreshing,
-                    onRefresh = { viewModel.loadData(isUserInitiated = true) }
-                )
-            },
-            floatingActionButton = {
-                AnimatedVisibility(
-                    visible = showScrollToTop,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    FloatingActionButton(
-                        onClick = {
-                            coroutineScope.launch {
-                                listState.animateScrollToItem(0)
-                            }
-                        },
-                        containerColor = PlanetRose,
-                        contentColor = Color.White,
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag("scroll_to_top_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowUp,
-                            contentDescription = "גלול לראש הדף",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                // Unified compact app bar: Sleek header + Segmented navigation tabs
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    CinemaHeader(
+                        currentTime = uiState.currentIsraelTime,
+                        dataSourceLabel = uiState.dataSourceLabel,
+                        isLive = uiState.isLiveDataSource,
+                        isRefreshing = uiState.isRefreshing,
+                        onRefresh = { viewModel.loadData(isUserInitiated = true) }
+                    )
+
+                    CinemaNavigationBar(
+                        activeTab = uiState.activeTab,
+                        onTabSelected = { tab ->
+                            viewModel.setActiveTab(tab)
+                            coroutineScope.launch { listState.scrollToItem(0) }
+                        }
+                    )
                 }
             },
             modifier = modifier.fillMaxSize()
@@ -162,7 +134,7 @@ fun CinemaDashboardScreen(
                         ) {
                             CircularProgressIndicator(
                                 color = PlanetRose,
-                                modifier = Modifier.size(40.dp)
+                                modifier = Modifier.size(38.dp)
                             )
                             Text(
                                 text = "טוען לוח הקרנות ונתוני אולמות…",
@@ -172,24 +144,19 @@ fun CinemaDashboardScreen(
                         }
                     }
                 } else {
+                    // Natural, smooth scroll container with no nested scroll traps
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        contentPadding = PaddingValues(
+                            start = 12.dp,
+                            end = 12.dp,
+                            top = 10.dp,
+                            bottom = 28.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Section: Tab Selection
-                        item(key = "tab_navigation") {
-                            CinemaTabSelector(
-                                activeTab = uiState.activeTab,
-                                onTabSelected = { tab ->
-                                    viewModel.setActiveTab(tab)
-                                    coroutineScope.launch { listState.scrollToItem(0) }
-                                }
-                            )
-                        }
-
-                        // Section: KPIs (Always visible for fast operational glance)
+                        // Section: Operational KPIs (Scrolls away naturally)
                         item(key = "kpi_section") {
                             KpiCardsSection(
                                 kpiStats = uiState.kpiStats,
@@ -304,7 +271,7 @@ fun CinemaDashboardScreen(
                     }
                 }
 
-                // Bottom Sheet Modal
+                // Bottom Sheet Modal for Screening details
                 uiState.selectedScreening?.let { screening ->
                     ScreeningDetailSheet(
                         screening = screening,
@@ -326,65 +293,6 @@ fun CinemaDashboardScreen(
                         totalAudience = uiState.kpiStats.peopleInside,
                         isLiveDataSource = uiState.isLiveDataSource,
                         onDismiss = { showAudienceDialog = false }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CinemaTabSelector(
-    activeTab: CinemaTab,
-    onTabSelected: (CinemaTab) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(PlanetSurface)
-            .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        CinemaTab.values().forEach { tab ->
-            val isSelected = activeTab == tab
-            val bg = if (isSelected) PlanetRose else Color.Transparent
-            val textColor = if (isSelected) Color.White else PlanetTextSecondary
-
-            val icon = when (tab) {
-                CinemaTab.SCHEDULE -> Icons.Filled.CalendarMonth
-                CinemaTab.TIMELINE -> Icons.Filled.Timeline
-                CinemaTab.HALLS_MAP -> Icons.Filled.GridOn
-            }
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(bg)
-                    .clickable { onTabSelected(tab) }
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = textColor,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = tab.title,
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            fontSize = 13.sp
-                        ),
-                        color = textColor
                     )
                 }
             }
@@ -456,7 +364,7 @@ private fun EmptyScreeningsState(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(PlanetSurface)
-            .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(16.dp))
             .padding(32.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -486,7 +394,7 @@ private fun EmptyScreeningsState(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(PlanetCardBg)
-                    .border(1.dp, PlanetBorder, RoundedCornerShape(8.dp))
+                    .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(8.dp))
                     .clickable(onClick = onReset)
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
@@ -507,12 +415,12 @@ private fun CinemaFooter(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 12.dp),
+            .padding(top = 8.dp, bottom = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Text(
-            text = "הנתונים מתרעננים אוטומטית • מושכים מהנתונים של אפליקציית Planet Checker",
+            text = "הנתונים מתרעננים אוטומטית • נתוני אמת מקופות Planet",
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
             color = PlanetTextMuted
         )

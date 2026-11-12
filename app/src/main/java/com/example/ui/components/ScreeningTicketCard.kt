@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -9,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,24 +44,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.example.data.model.RoomType
 import com.example.data.model.Screening
 import com.example.data.model.ScreeningStatus
 import com.example.data.repository.CinemaRepository
 import com.example.ui.theme.PlanetAmber
 import com.example.ui.theme.PlanetBorder
+import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
 import com.example.ui.theme.PlanetEmerald
 import com.example.ui.theme.PlanetEmeraldLight
 import com.example.ui.theme.PlanetGold
 import com.example.ui.theme.PlanetRose
+import com.example.ui.theme.PlanetRoseGlow
 import com.example.ui.theme.PlanetRoseLight
 import com.example.ui.theme.PlanetSurface
 import com.example.ui.theme.PlanetTextMuted
@@ -91,27 +97,27 @@ fun ScreeningTicketCard(
     val cardBorderColor = when {
         isLive -> PlanetRose.copy(alpha = pulseAlpha)
         isRecentlyEnded -> PlanetAmber.copy(alpha = 0.4f)
-        isEnded -> PlanetBorder.copy(alpha = 0.3f)
-        else -> PlanetBorder.copy(alpha = 0.7f)
+        isEnded -> PlanetBorderSubtle
+        else -> PlanetBorderSubtle
     }
 
     val cardBg = when {
         isLive -> Brush.verticalGradient(
-            listOf(PlanetCardBg, PlanetDarkBg.copy(alpha = 0.95f))
+            listOf(PlanetCardBg, PlanetDarkBg)
         )
         isEnded -> Brush.verticalGradient(
-            listOf(PlanetDarkBg, PlanetDarkBg.copy(alpha = 0.85f))
+            listOf(PlanetDarkBg.copy(alpha = 0.6f), PlanetDarkBg)
         )
         else -> Brush.verticalGradient(
-            listOf(PlanetSurface, PlanetDarkBg.copy(alpha = 0.95f))
+            listOf(PlanetSurface, PlanetCardBg)
         )
     }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .border(if (isLive) 1.5.dp else 1.dp, cardBorderColor, RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(16.dp))
+            .border(if (isLive) 1.5.dp else 1.dp, cardBorderColor, RoundedCornerShape(16.dp))
             .background(cardBg)
             .clickable(onClick = onClick)
             .testTag("screening_card_${screening.id}")
@@ -119,46 +125,59 @@ fun ScreeningTicketCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Left Column: Poster Thumbnail
+            // Poster Column
             Box(
                 modifier = Modifier
-                    .width(100.dp)
-                    .aspectRatio(2f / 3.2f)
+                    .width(92.dp)
+                    .aspectRatio(2f / 3.1f)
                     .clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                screening.roomType.badgeColor.copy(alpha = 0.35f),
-                                PlanetDarkBg
-                            )
-                        )
-                    ),
+                    .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(12.dp))
+                    .background(PlanetCardBg),
                 contentAlignment = Alignment.BottomCenter
             ) {
-                if (!screening.posterUrl.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = screening.posterUrl,
-                        contentDescription = screening.title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Movie,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.3f),
-                            modifier = Modifier.size(36.dp)
-                        )
+                SubcomposeAsyncImage(
+                    model = screening.posterUrl,
+                    contentDescription = screening.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                    loading = {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(PlanetCardBg),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Movie,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.2f),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    },
+                    error = {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(screening.roomType.badgeColor.copy(alpha = 0.5f), PlanetDarkBg)
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Movie,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.4f),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
                     }
-                }
+                )
 
                 // Dark gradient overlay
                 Box(
@@ -169,7 +188,7 @@ fun ScreeningTicketCard(
                                 colors = listOf(
                                     Color.Transparent,
                                     Color.Black.copy(alpha = 0.4f),
-                                    Color.Black.copy(alpha = 0.85f)
+                                    Color.Black.copy(alpha = 0.88f)
                                 )
                             )
                         )
@@ -179,8 +198,8 @@ fun ScreeningTicketCard(
                     text = screening.title,
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        lineHeight = 13.sp
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp
                     ),
                     color = Color.White,
                     textAlign = TextAlign.Center,
@@ -197,7 +216,7 @@ fun ScreeningTicketCard(
                     .fillMaxHeight(),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Top Row: Format Badge & Status Badge
+                // Top Row: Format Badge & Status Pill
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -208,14 +227,14 @@ fun ScreeningTicketCard(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(screening.roomType.containerColor)
-                            .border(1.dp, screening.roomType.badgeColor.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                            .border(1.dp, screening.roomType.badgeColor.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = screening.roomType.label,
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
+                                fontSize = 10.sp
                             ),
                             color = screening.roomType.badgeColor
                         )
@@ -224,13 +243,12 @@ fun ScreeningTicketCard(
                     // Status Pill
                     when (screening.status) {
                         ScreeningStatus.LIVE -> {
-                            val diff = screening.endMin - currentCinemaMinutes
                             Box(
                                 modifier = Modifier
                                     .clip(CircleShape)
                                     .background(PlanetRose.copy(alpha = 0.2f))
                                     .border(1.dp, PlanetRoseLight.copy(alpha = 0.6f), CircleShape)
-                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    .padding(horizontal = 7.dp, vertical = 2.dp)
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -238,7 +256,7 @@ fun ScreeningTicketCard(
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(6.dp)
+                                            .size(5.dp)
                                             .clip(CircleShape)
                                             .background(PlanetRoseLight)
                                     )
@@ -246,7 +264,7 @@ fun ScreeningTicketCard(
                                         text = "מוקרן כעת",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 10.sp
+                                            fontSize = 9.sp
                                         ),
                                         color = PlanetRoseLight
                                     )
@@ -261,13 +279,13 @@ fun ScreeningTicketCard(
                                         .clip(CircleShape)
                                         .background(PlanetEmerald.copy(alpha = 0.2f))
                                         .border(1.dp, PlanetEmeraldLight.copy(alpha = 0.5f), CircleShape)
-                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                        .padding(horizontal = 7.dp, vertical = 2.dp)
                                 ) {
                                     Text(
                                         text = "קהל נכנס",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 10.sp
+                                            fontSize = 9.sp
                                         ),
                                         color = PlanetEmeraldLight
                                     )
@@ -300,14 +318,15 @@ fun ScreeningTicketCard(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
 
                 // Title & Hall
                 Text(
                     text = screening.title,
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        fontSize = 15.sp,
+                        lineHeight = 19.sp
                     ),
                     color = Color.White,
                     maxLines = 1,
@@ -322,37 +341,42 @@ fun ScreeningTicketCard(
                         imageVector = Icons.Filled.MeetingRoom,
                         contentDescription = null,
                         tint = PlanetTextSecondary,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = RoomType.formatRoomLabel(screening.room),
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                         color = PlanetTextSecondary
                     )
-                }
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                        color = PlanetTextMuted
+                    )
 
-                // Relative time sentence
-                val relSentence = when (screening.status) {
-                    ScreeningStatus.LIVE -> {
-                        val remaining = screening.endMin - currentCinemaMinutes
-                        "נגמר ${cinemaRepository.relativeTimeSpan(remaining)}"
+                    // Relative time countdown
+                    val relSentence = when (screening.status) {
+                        ScreeningStatus.LIVE -> {
+                            val remaining = screening.endMin - currentCinemaMinutes
+                            "נגמר ${cinemaRepository.relativeTimeSpan(remaining)}"
+                        }
+                        ScreeningStatus.UPCOMING -> {
+                            val untilStart = screening.startMin - currentCinemaMinutes
+                            "מתחיל ${cinemaRepository.relativeTimeSpan(untilStart)}"
+                        }
+                        ScreeningStatus.ENDED_RECENTLY -> "הסתיים לאחרונה"
+                        ScreeningStatus.ENDED -> "הסתיים"
                     }
-                    ScreeningStatus.UPCOMING -> {
-                        val untilStart = screening.startMin - currentCinemaMinutes
-                        "מתחיל ${cinemaRepository.relativeTimeSpan(untilStart)}"
-                    }
-                    ScreeningStatus.ENDED_RECENTLY -> "הסתיים לפני זמן קצר"
-                    ScreeningStatus.ENDED -> "הקרנה הסתיימה"
-                }
 
-                Text(
-                    text = relSentence,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 11.sp,
-                        fontWeight = if (isLive) FontWeight.Bold else FontWeight.Normal
-                    ),
-                    color = if (isLive) PlanetRoseLight else PlanetTextMuted
-                )
+                    Text(
+                        text = relSentence,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = if (isLive) FontWeight.Bold else FontWeight.Normal
+                        ),
+                        color = if (isLive) PlanetRoseLight else PlanetTextMuted
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -385,12 +409,12 @@ fun ScreeningTicketCard(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // Crowd Level & Meter
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -402,7 +426,7 @@ fun ScreeningTicketCard(
                                 text = screening.estimatedPeople?.toString() ?: "?",
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp
+                                    fontSize = 16.sp
                                 ),
                                 color = Color.White
                             )
@@ -410,15 +434,15 @@ fun ScreeningTicketCard(
                                 text = " / ${screening.capacity ?: "?"} צופים",
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
                                 color = PlanetTextMuted,
-                                modifier = Modifier.padding(bottom = 2.dp)
+                                modifier = Modifier.padding(bottom = 1.dp)
                             )
                         }
 
                         Text(
-                            text = screening.crowdLevel.label,
+                            text = "${screening.crowdLevel.label} (${screening.occupancyPercentage}%)",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp
+                                fontSize = 10.sp
                             ),
                             color = screening.crowdLevel.color
                         )
@@ -429,8 +453,8 @@ fun ScreeningTicketCard(
                         progress = { (screening.occupancyPercentage / 100f).coerceIn(0f, 1f) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(5.dp)
-                            .clip(RoundedCornerShape(3.dp)),
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp)),
                         color = screening.crowdLevel.progressColor,
                         trackColor = PlanetDarkBg,
                         strokeCap = StrokeCap.Round
@@ -452,14 +476,14 @@ private fun TimePill(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(PlanetDarkBg.copy(alpha = 0.7f))
+            .clip(RoundedCornerShape(6.dp))
+            .background(PlanetDarkBg.copy(alpha = 0.8f))
             .border(
                 1.dp,
-                if (isPrimary) PlanetBorder else PlanetBorder.copy(alpha = 0.4f),
-                RoundedCornerShape(8.dp)
+                if (isPrimary) PlanetBorder.copy(alpha = 0.7f) else PlanetBorderSubtle,
+                RoundedCornerShape(6.dp)
             )
-            .padding(vertical = 4.dp),
+            .padding(vertical = 3.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -468,14 +492,15 @@ private fun TimePill(
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
                 color = labelColor
             )
             Text(
                 text = time,
                 style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = if (isPrimary) FontWeight.Black else FontWeight.Bold,
-                    fontSize = if (isPrimary) 13.sp else 12.sp
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Medium,
+                    fontSize = if (isPrimary) 12.sp else 11.sp
                 ),
                 color = timeColor
             )

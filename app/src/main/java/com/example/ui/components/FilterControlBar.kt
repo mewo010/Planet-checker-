@@ -1,8 +1,10 @@
 package com.example.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,14 +18,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -49,9 +51,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.SortOption
 import com.example.ui.theme.PlanetBorder
+import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
-import com.example.ui.theme.PlanetImaxSky
+import com.example.ui.theme.PlanetEmerald
+import com.example.ui.theme.PlanetEmeraldLight
 import com.example.ui.theme.PlanetImaxSkyLight
 import com.example.ui.theme.PlanetRose
 import com.example.ui.theme.PlanetRoseLight
@@ -95,7 +99,7 @@ fun FilterControlBar(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(PlanetSurface)
-            .border(1.dp, PlanetBorder.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(16.dp))
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -111,7 +115,7 @@ fun FilterControlBar(
                 onValueChange = onSearchQueryChange,
                 placeholder = {
                     Text(
-                        text = "חיפוש לפי שם סרט או מספר אולם…",
+                        text = "חיפוש סרט או מספר אולם…",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
                         color = PlanetTextMuted
                     )
@@ -128,7 +132,7 @@ fun FilterControlBar(
                     if (searchQuery.isNotEmpty()) {
                         IconButton(
                             onClick = { onSearchQueryChange("") },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Clear,
@@ -150,10 +154,10 @@ fun FilterControlBar(
                     focusedIndicatorColor = PlanetRose,
                     unfocusedIndicatorColor = Color.Transparent
                 ),
-                textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                 modifier = Modifier
                     .weight(1f)
-                    .height(48.dp)
+                    .height(46.dp)
                     .testTag("search_input")
             )
 
@@ -161,11 +165,11 @@ fun FilterControlBar(
             Box {
                 Box(
                     modifier = Modifier
-                        .height(48.dp)
+                        .height(46.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(PlanetCardBg)
-                        .border(1.dp, PlanetBorder, RoundedCornerShape(12.dp))
-                        .clickable { sortMenuExpanded = true }
+                        .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(12.dp))
+                        .clickable(onClick = { sortMenuExpanded = true })
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -175,20 +179,23 @@ fun FilterControlBar(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Sort,
-                            contentDescription = null,
+                            contentDescription = "מיון",
                             tint = PlanetTextSecondary,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = sortBy.title,
-                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp
+                            ),
                             color = Color.White
                         )
                         Icon(
                             imageVector = Icons.Filled.ArrowDropDown,
                             contentDescription = null,
                             tint = PlanetTextSecondary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -196,16 +203,35 @@ fun FilterControlBar(
                 DropdownMenu(
                     expanded = sortMenuExpanded,
                     onDismissRequest = { sortMenuExpanded = false },
-                    modifier = Modifier.background(PlanetCardBg)
+                    modifier = Modifier
+                        .background(PlanetCardBg)
+                        .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(8.dp))
                 ) {
                     SortOption.values().forEach { option ->
+                        val isSelected = sortBy == option
                         DropdownMenuItem(
                             text = {
-                                Text(
-                                    text = option.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (sortBy == option) PlanetRoseLight else Color.White
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = option.title,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        ),
+                                        color = if (isSelected) PlanetRoseLight else Color.White
+                                    )
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            tint = PlanetRoseLight,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
                             },
                             onClick = {
                                 onSortChange(option)
@@ -219,7 +245,7 @@ fun FilterControlBar(
 
         // Horizontal filter buttons row
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             contentPadding = PaddingValues(horizontal = 1.dp)
         ) {
             items(filterCategories, key = { it.key }) { category ->
@@ -228,16 +254,17 @@ fun FilterControlBar(
 
                 val bg = if (isActive) PlanetRose else PlanetCardBg
                 val contentColor = if (isActive) Color.White else (category.badgeColor.takeIf { it != Color.Unspecified } ?: PlanetTextSecondary)
-                val border = if (isActive) PlanetRose else PlanetBorder.copy(alpha = 0.7f)
+                val border = if (isActive) PlanetRose else PlanetBorderSubtle
 
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(8.dp))
                         .background(bg)
-                        .border(1.dp, border, RoundedCornerShape(10.dp))
-                        .clickable { onFilterChange(category.key) }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                        .testTag("filter_${category.key}")
+                        .border(1.dp, border, RoundedCornerShape(8.dp))
+                        .clickable(onClick = { onFilterChange(category.key) })
+                        .padding(horizontal = 9.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -247,16 +274,17 @@ fun FilterControlBar(
                             text = category.label,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             ),
                             color = contentColor
                         )
                         Text(
-                            text = "($count)",
+                            text = "$count",
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.sp
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
                             ),
-                            color = if (isActive) Color.White.copy(alpha = 0.8f) else PlanetTextMuted
+                            color = if (isActive) Color.White.copy(alpha = 0.85f) else PlanetTextMuted
                         )
                     }
                 }
@@ -279,22 +307,23 @@ fun FilterControlBar(
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
                         checkedTrackColor = PlanetRose,
-                        uncheckedThumbColor = PlanetTextSecondary,
-                        uncheckedTrackColor = PlanetCardBg
+                        uncheckedThumbColor = PlanetTextMuted,
+                        uncheckedTrackColor = PlanetDarkBg,
+                        uncheckedBorderColor = PlanetBorderSubtle
                     ),
-                    modifier = Modifier.size(width = 44.dp, height = 24.dp)
+                    modifier = Modifier.size(width = 40.dp, height = 22.dp)
                 )
                 Text(
                     text = "הצג הקרנות שהסתיימו",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                     color = if (showEnded) Color.White else PlanetTextSecondary
                 )
             }
 
             if (searchQuery.isNotEmpty()) {
                 Text(
-                    text = "תוצאות סינון",
-                    style = MaterialTheme.typography.labelSmall,
+                    text = "תוצאות חיפוש פעילות",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = PlanetRoseLight
                 )
             }

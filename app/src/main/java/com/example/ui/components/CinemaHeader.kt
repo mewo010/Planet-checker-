@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.PlanetAmber
 import com.example.ui.theme.PlanetBorder
+import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
 import com.example.ui.theme.PlanetEmerald
@@ -50,6 +51,7 @@ import com.example.ui.theme.PlanetGold
 import com.example.ui.theme.PlanetNavy
 import com.example.ui.theme.PlanetRose
 import com.example.ui.theme.PlanetRoseLight
+import com.example.ui.theme.PlanetSurfaceGlass
 import com.example.ui.theme.PlanetTextMuted
 import com.example.ui.theme.PlanetTextSecondary
 
@@ -73,183 +75,139 @@ fun CinemaHeader(
         label = "rotation"
     )
 
+    // Pulse animation for live status dot
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_dot"
+    )
+
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        PlanetNavy.copy(alpha = 0.95f),
-                        PlanetDarkBg.copy(alpha = 0.90f)
-                    )
-                )
-            )
-            .border(width = 1.dp, color = PlanetBorder.copy(alpha = 0.6f))
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .background(PlanetSurfaceGlass)
+            .border(width = 1.dp, color = PlanetBorderSubtle)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            // Brand Logo & Titles
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Brand Logo & Titles
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(PlanetRose, PlanetAmber)
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Movie,
-                            contentDescription = "Planet Cinema",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "פלאנט צ'קר",
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 20.sp
-                                ),
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "לוח עובדים",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = PlanetRoseLight,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(PlanetRose.copy(alpha = 0.15f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                        Text(
-                            text = "פלאנט ראשון לציון • מי נכנס, מי יוצא ומתי",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = PlanetTextMuted
-                        )
-                    }
-                }
-
-                // Clock & Refresh
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    IconButton(
-                        onClick = onRefresh,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(PlanetCardBg)
-                            .border(1.dp, PlanetBorder, RoundedCornerShape(10.dp))
-                            .testTag("refresh_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = "רענן נתונים",
-                            tint = Color.White,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .then(if (isRefreshing) Modifier.rotate(rotation) else Modifier)
-                        )
-                    }
-
-                    // Israel Digital Clock
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(PlanetCardBg)
-                            .border(1.dp, PlanetBorder.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "שעון ישראל",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                color = PlanetTextSecondary
-                            )
-                            Text(
-                                text = currentTime,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    letterSpacing = 1.sp
-                                ),
-                                color = PlanetGold
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Status Badge Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .clip(CircleShape)
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(
-                            if (isLive) PlanetEmerald.copy(alpha = 0.15f)
-                            else PlanetAmber.copy(alpha = 0.15f)
-                        )
-                        .border(
-                            1.dp,
-                            if (isLive) PlanetEmeraldLight.copy(alpha = 0.4f)
-                            else PlanetAmber.copy(alpha = 0.4f),
-                            CircleShape
-                        )
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                            Brush.linearGradient(
+                                colors = listOf(PlanetRose, PlanetAmber)
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
+                    Icon(
+                        imageVector = Icons.Filled.Movie,
+                        contentDescription = "Planet Cinema",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.Center) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        Text(
+                            text = "פלאנט צ'קר",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp
+                            ),
+                            color = Color.White
+                        )
+
+                        // Live status indicator dot
                         Box(
                             modifier = Modifier
-                                .size(6.dp)
+                                .size(7.dp)
                                 .clip(CircleShape)
-                                .background(if (isLive) PlanetEmeraldLight else PlanetAmber)
+                                .background(
+                                    if (isLive) PlanetEmeraldLight.copy(alpha = pulseAlpha)
+                                    else PlanetAmber
+                                )
+                        )
+                    }
+
+                    Text(
+                        text = if (isLive) "ראשון לציון • נתוני אמת מהקופות" else "ראשון לציון • מצב לא מקוון",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                        color = if (isLive) PlanetTextSecondary else PlanetAmber
+                    )
+                }
+            }
+
+            // Right side (in LTR visual) / Left side (in RTL): Clock & Refresh
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Israel Clock Badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(PlanetCardBg)
+                        .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 9.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "שעון ישראל",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                            color = PlanetTextMuted
                         )
                         Text(
-                            text = dataSourceLabel,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isLive) PlanetEmeraldLight else PlanetAmber
+                            text = currentTime,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                letterSpacing = 0.5.sp
+                            ),
+                            color = PlanetGold
                         )
                     }
                 }
 
-                Text(
-                    text = "מתעדכן אוטומטית • ניטור בזמן אמת",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = PlanetTextMuted
-                )
+                // Refresh Button
+                IconButton(
+                    onClick = onRefresh,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(PlanetCardBg)
+                        .border(1.dp, PlanetBorder.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                        .testTag("refresh_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "רענן נתונים",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .then(if (isRefreshing) Modifier.rotate(rotation) else Modifier)
+                    )
+                }
             }
         }
     }

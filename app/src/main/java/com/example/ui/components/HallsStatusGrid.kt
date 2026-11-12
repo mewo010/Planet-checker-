@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,19 +13,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MeetingRoom
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,12 +37,10 @@ import com.example.data.model.RoomType
 import com.example.data.model.Screening
 import com.example.data.model.ScreeningStatus
 import com.example.data.repository.CinemaRepository
-import com.example.ui.theme.PlanetAmber
-import com.example.ui.theme.PlanetBorder
+import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
 import com.example.ui.theme.PlanetEmeraldLight
-import com.example.ui.theme.PlanetGold
 import com.example.ui.theme.PlanetRose
 import com.example.ui.theme.PlanetRoseLight
 import com.example.ui.theme.PlanetSurface
@@ -106,13 +102,13 @@ fun HallsStatusGrid(
                     text = "מפת 24 האולמות",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
+                        fontSize = 17.sp
                     ),
                     color = Color.White
                 )
                 Text(
-                    text = "סטטוס פעילות חי בזמן אמת",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "סטטוס פעילות בזמן אמת",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                     color = PlanetTextSecondary
                 )
             }
@@ -120,23 +116,23 @@ fun HallsStatusGrid(
             val activeCount = hallStates.count { it.liveScreening != null }
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(6.dp))
                     .background(PlanetCardBg)
-                    .border(1.dp, PlanetBorder, RoundedCornerShape(8.dp))
+                    .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(6.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = "$activeCount / 24 פעילים כעת",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        fontSize = 10.sp
                     ),
                     color = PlanetRoseLight
                 )
             }
         }
 
-        // Responsive grid of hall cards
+        // Responsive 2-column grid of hall cards
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val chunked = hallStates.chunked(2)
             chunked.forEach { pair ->
@@ -172,24 +168,27 @@ private fun HallCard(
 ) {
     val live = hallState.liveScreening
     val isLive = live != null
+    val targetScreening = live ?: hallState.nextScreening
+    val isClickable = targetScreening != null
 
-    val borderColor = if (isLive) PlanetRose.copy(alpha = 0.6f) else PlanetBorder.copy(alpha = 0.5f)
+    val borderColor = if (isLive) PlanetRose.copy(alpha = 0.5f) else PlanetBorderSubtle
     val bgColor = if (isLive) PlanetSurface else PlanetDarkBg.copy(alpha = 0.8f)
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(14.dp))
-            .clickable(enabled = live != null || hallState.nextScreening != null) {
-                val target = live ?: hallState.nextScreening
-                if (target != null) onScreeningClick(target)
-            }
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .then(
+                if (isClickable) {
+                    Modifier.clickable(onClick = { onScreeningClick(targetScreening!!) })
+                } else Modifier
+            )
             .padding(10.dp)
             .testTag("hall_card_${hallState.hallNumber}")
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             // Header: Hall number & format badge
             Row(
@@ -205,13 +204,13 @@ private fun HallCard(
                         imageVector = Icons.Filled.MeetingRoom,
                         contentDescription = null,
                         tint = if (isLive) PlanetRoseLight else PlanetTextSecondary,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = "אולם ${hallState.hallNumber}",
                         style = MaterialTheme.typography.titleSmall.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         ),
                         color = Color.White
                     )
@@ -221,7 +220,7 @@ private fun HallCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(4.dp))
                         .background(hallState.roomType.containerColor)
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
                 ) {
                     Text(
                         text = hallState.roomType.label,
@@ -236,14 +235,14 @@ private fun HallCard(
 
             // Body: Live Movie or Next
             if (live != null) {
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(6.dp)
+                                .size(5.dp)
                                 .clip(CircleShape)
                                 .background(PlanetRoseLight)
                         )
@@ -251,7 +250,7 @@ private fun HallCard(
                             text = live.title,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             ),
                             color = Color.White,
                             maxLines = 1,
@@ -261,7 +260,7 @@ private fun HallCard(
 
                     val remaining = live.endMin - currentCinemaMinutes
                     Text(
-                        text = "מסתיים ${cinemaRepository.relativeTimeSpan(remaining)} (${cinemaRepository.formatCinemaMinutes(live.endMin)})",
+                        text = "נגמר ${cinemaRepository.relativeTimeSpan(remaining)} (${cinemaRepository.formatCinemaMinutes(live.endMin)})",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
                         color = PlanetRoseLight
                     )
@@ -275,7 +274,7 @@ private fun HallCard(
                         progress = { progressFraction },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(4.dp)
+                            .height(3.dp)
                             .clip(RoundedCornerShape(2.dp)),
                         color = PlanetRose,
                         trackColor = PlanetDarkBg,
@@ -294,13 +293,13 @@ private fun HallCard(
                     )
                     Text(
                         text = "ב-${cinemaRepository.formatCinemaMinutes(next.startMin)} • ${cinemaRepository.relativeTimeSpan(next.startMin - currentCinemaMinutes)}",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
                         color = PlanetEmeraldLight
                     )
                 }
             } else {
                 Text(
-                    text = "פנוי כרגע (אין הקרנה מתוכננת)",
+                    text = "פנוי כרגע",
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
                     color = PlanetTextMuted
                 )

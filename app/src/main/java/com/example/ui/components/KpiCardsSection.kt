@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
@@ -22,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,14 +41,16 @@ import com.example.data.model.KpiStats
 import com.example.data.model.RoomType
 import com.example.data.repository.CinemaRepository
 import com.example.ui.theme.PlanetAmber
-import com.example.ui.theme.PlanetBorder
+import com.example.ui.theme.PlanetAmberGlow
+import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetEmerald
+import com.example.ui.theme.PlanetEmeraldGlow
 import com.example.ui.theme.PlanetEmeraldLight
 import com.example.ui.theme.PlanetGold
 import com.example.ui.theme.PlanetImaxSky
-import com.example.ui.theme.PlanetImaxSkyLight
 import com.example.ui.theme.PlanetRose
+import com.example.ui.theme.PlanetRoseGlow
 import com.example.ui.theme.PlanetRoseLight
 import com.example.ui.theme.PlanetSurface
 import com.example.ui.theme.PlanetTextMuted
@@ -71,12 +76,13 @@ fun KpiCardsSection(
             KpiCard(
                 title = "בקולנוע כרגע",
                 value = kpiStats.peopleInside.toString(),
-                subtitle = "${kpiStats.activeHallsCount} אולמות פעילים • לחץ לפירוט",
+                subtitle = "${kpiStats.activeHallsCount} אולמות פעילים",
                 icon = Icons.Filled.Group,
                 accentColor = PlanetRose,
+                accentGlow = PlanetRoseGlow,
                 valueColor = Color.White,
                 onClick = onInsideAudienceClick,
-                badgeText = if (isLiveDataSource) "נתון אמת" else "דוגמה",
+                badgeText = if (isLiveDataSource) "נתון אמת ↗" else "דוגמה",
                 testTag = "kpi_inside",
                 modifier = Modifier.weight(1f)
             )
@@ -87,6 +93,7 @@ fun KpiCardsSection(
                 subtitle = "${kpiStats.out30MinHalls} אולמות מתרוקנים",
                 icon = Icons.AutoMirrored.Filled.ExitToApp,
                 accentColor = PlanetAmber,
+                accentGlow = PlanetAmberGlow,
                 valueColor = PlanetGold,
                 testTag = "kpi_leaving",
                 modifier = Modifier.weight(1f)
@@ -104,6 +111,7 @@ fun KpiCardsSection(
                 subtitle = "${kpiStats.in30MinHalls} הקרנות מתמלאות",
                 icon = Icons.AutoMirrored.Filled.Login,
                 accentColor = PlanetEmerald,
+                accentGlow = PlanetEmeraldGlow,
                 valueColor = PlanetEmeraldLight,
                 testTag = "kpi_arriving",
                 modifier = Modifier.weight(1f)
@@ -127,6 +135,7 @@ fun KpiCardsSection(
                 subtitle = nextSubtitle,
                 icon = Icons.Filled.NotificationsActive,
                 accentColor = PlanetImaxSky,
+                accentGlow = Color(0x330284C7),
                 valueColor = Color.White,
                 isTextValue = true,
                 testTag = "kpi_next_event",
@@ -143,6 +152,7 @@ private fun KpiCard(
     subtitle: String,
     icon: ImageVector,
     accentColor: Color,
+    accentGlow: Color,
     valueColor: Color,
     modifier: Modifier = Modifier,
     isTextValue: Boolean = false,
@@ -150,27 +160,29 @@ private fun KpiCard(
     badgeText: String? = null,
     testTag: String = ""
 ) {
-    val clickModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    val clickModifier = if (onClick != null) {
+        Modifier.clickable(onClick = onClick)
+    } else Modifier
 
     Box(
         modifier = modifier
+            .height(104.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(
-                        PlanetSurface,
-                        PlanetCardBg.copy(alpha = 0.85f)
-                    )
+                    colors = listOf(PlanetSurface, PlanetCardBg)
                 )
             )
-            .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(16.dp))
             .then(clickModifier)
             .padding(12.dp)
             .testTag(testTag)
     ) {
         Column(
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
+            // Header Row: Icon + Title + Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -180,15 +192,27 @@ private fun KpiCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = accentColor,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(accentGlow),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 12.sp
+                        ),
                         color = PlanetTextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -200,25 +224,30 @@ private fun KpiCard(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
                             .background(PlanetEmerald.copy(alpha = 0.15f))
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = badgeText,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.sp
+                            ),
                             color = PlanetEmeraldLight
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
+            // Value
             if (isTextValue) {
                 Text(
                     text = value,
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp
                     ),
                     color = valueColor,
                     maxLines = 1,
@@ -229,7 +258,8 @@ private fun KpiCard(
                     text = value,
                     style = MaterialTheme.typography.displayMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 28.sp
+                        fontSize = 26.sp,
+                        lineHeight = 28.sp
                     ),
                     color = valueColor
                 )
@@ -237,9 +267,10 @@ private fun KpiCard(
 
             Spacer(modifier = Modifier.height(2.dp))
 
+            // Subtitle
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
                 color = PlanetTextMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

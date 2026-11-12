@@ -66,6 +66,9 @@ import com.example.ui.theme.PlanetSurface
 import com.example.ui.theme.PlanetTextMuted
 import com.example.ui.theme.PlanetTextSecondary
 
+import coil.compose.SubcomposeAsyncImage
+import com.example.ui.theme.PlanetBorderSubtle
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScreeningDetailSheet(
@@ -80,13 +83,22 @@ fun ScreeningDetailSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = PlanetSurface,
-        dragHandle = null,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 10.dp)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(PlanetBorder)
+            )
+        },
         modifier = Modifier.testTag("screening_detail_sheet")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -129,7 +141,7 @@ fun ScreeningDetailSheet(
 
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
@@ -149,25 +161,50 @@ fun ScreeningDetailSheet(
                         .width(96.dp)
                         .aspectRatio(2f / 3f)
                         .clip(RoundedCornerShape(12.dp))
-                        .border(1.dp, PlanetBorder, RoundedCornerShape(12.dp))
+                        .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(12.dp))
                         .background(PlanetCardBg),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (!screening.posterUrl.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = screening.posterUrl,
-                            contentDescription = screening.title,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.Movie,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.3f),
-                            modifier = Modifier.size(40.dp)
-                        )
-                    }
+                    SubcomposeAsyncImage(
+                        model = screening.posterUrl,
+                        contentDescription = screening.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        loading = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(PlanetCardBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Movie,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        },
+                        error = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(screening.roomType.badgeColor.copy(alpha = 0.4f), PlanetDarkBg)
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Movie,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.4f),
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                        }
+                    )
                 }
 
                 Column(
