@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -76,7 +77,8 @@ fun ScreeningDetailSheet(
     cinemaRepository: CinemaRepository,
     sheetState: SheetState,
     onDismiss: () -> Unit,
-    onFilterByMovie: (String) -> Unit
+    onFilterByMovie: (String) -> Unit,
+    onOpenSeatMap: (Screening) -> Unit = {}
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -492,6 +494,34 @@ fun ScreeningDetailSheet(
             }
 
             // Action Buttons (48dp accessible height)
+            FilledTonalButton(
+                onClick = {
+                    onDismiss()
+                    onOpenSeatMap(screening)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
+                    .testTag("open_seat_map_button"),
+                shape = RoundedCornerShape(PlanetRadius.md),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = PlanetCardBg,
+                    contentColor = PlanetTextPrimary
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.EventSeat,
+                    contentDescription = null,
+                    tint = PlanetGold,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "מפת מושבים אינטראקטיבית באולם",
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)

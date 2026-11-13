@@ -75,6 +75,7 @@ import com.example.ui.components.MovieCarousel
 import com.example.ui.components.ScreeningDetailSheet
 import com.example.ui.components.ScreeningTicketCard
 import com.example.ui.components.TimelineView
+import com.example.ui.seatmap.AuditoriumSeatMapDialog
 import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
@@ -100,6 +101,7 @@ fun CinemaDashboardScreen(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showAudienceDialog by remember { mutableStateOf(false) }
+    var seatMapScreeningId by remember { mutableStateOf<String?>(null) }
     val reducedMotion = rememberReducedMotion()
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -292,7 +294,12 @@ fun CinemaDashboardScreen(
                                                     allScreenings = uiState.allScreenings,
                                                     currentCinemaMinutes = uiState.currentCinemaMinutes,
                                                     cinemaRepository = cinemaRepository,
-                                                    onScreeningClick = { viewModel.selectScreening(it) }
+                                                    onScreeningClick = { viewModel.selectScreening(it) },
+                                                    onOpenSeatMap = { screening ->
+                                                        if (screening != null) {
+                                                            seatMapScreeningId = screening.id
+                                                        }
+                                                    }
                                                 )
                                             }
                                         }
@@ -334,7 +341,22 @@ fun CinemaDashboardScreen(
                                 onFilterByMovie = { movieTitle ->
                                     viewModel.setActiveTab(CinemaTab.SCHEDULE)
                                     viewModel.toggleMovieSelection(movieTitle)
+                                },
+                                onOpenSeatMap = { target ->
+                                    seatMapScreeningId = target.id
                                 }
+                            )
+                        }
+
+                        seatMapScreeningId?.let { targetScreeningId ->
+                            AuditoriumSeatMapDialog(
+                                initialScreeningId = targetScreeningId,
+                                allScreenings = uiState.allScreenings,
+                                isRefreshingSeatMap = uiState.seatMapUpdateInProgress,
+                                onRefreshScreeningSeatMap = { target ->
+                                    viewModel.refreshScreeningSeatMap(target.id)
+                                },
+                                onDismiss = { seatMapScreeningId = null }
                             )
                         }
 

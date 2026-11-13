@@ -20,9 +20,11 @@ import com.example.data.model.ScreeningStatus
 import com.example.data.model.SortOption
 import com.example.data.model.calculateCinemaOccupancy
 import com.example.data.model.deduplicateScreenings
+import com.example.data.model.mergeScreeningAvailability
 import com.example.data.repository.AttendanceHistoryRepository
 import com.example.data.repository.CinemaRepository
 import com.example.data.repository.SeatAvailabilityRepository
+import com.example.data.repository.SeatFetchResult
 import com.example.worker.CinemaMonitorWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -744,5 +746,87 @@ class CinemaViewModel private constructor(
 
     fun setActiveTab(tab: CinemaTab) {
         _uiState.update { it.copy(activeTab = tab) }
+    }
+
+    /**
+     * Explicit user-initiated seat map refresh for a single screening inside the Auditorium Seat Map.
+     * Opening or closing the seat map never invokes this automatically.
+     */
+    fun refreshScreeningSeatMap(screeningId: String) {
+        val currentState = _uiState.value
+        val target = currentState.allScreenings.firstOrNull { it.id == screeningId } ?: return
+        val pid = target.presentationId?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        if (currentState.seatMapUpdateInProgress) return
+
+        seatRefreshJob?.cancel()
+        seatRefreshJob = viewModelScope.launch {
+            _uiState.update { it.copy(seatMapUpdateInProgress = true) }
+            try {
+                val result = seatAvailabilityRepository.fetchSeatAvailability(
+                    presentationId = pid,
+                    venueTypeId = target.venueTypeId,
+                    isReserved = 1,
+                    cacheTtlMs = SeatAvailabilityRepository.DEFAULT_CACHE_TTL_MS,
+                    forceRefresh = true
+                )
+                val summaries = if (result is SeatFetchResult.Success) {
+                    mapOf(pid to result.summary)
+                } else {
+                    emptyMap()
+                }
+                val mergedTarget = mergeScreeningAvailability(
+                    screenings = listOf(target),
+                    seatSummariesByKey = summaries,
+                    seatFetchResultsByKey = mapOf(pid to result)
+                ).first()
+
+                val now = getCurrentIsraelZonedTime()
+                val cinemaMinutes = repository.normalizeCinemaMinutes(now.hour * 60 + now.minute)
+                val nowEpoch = System.currentTimeMillis()
+                val succeeded = result is SeatFetchResult.Success
+
+                _uiState.update { state ->
+                    val updatedAll = state.allScreenings.map { s ->
+                        if (s.id == screeningId) mergedTarget else s
+                    }
+                    val effectiveEpoch = if (succeeded) nowEpoch else state.lastSuccessfulUpdateEpochMs
+                    val effectiveLabel = effectiveEpoch?.let {
+                        Instant.ofEpochMilli(it).atZone(jerusalemZone).format(hhmmFormatter)
+                    } ?: state.lastSuccessfulUpdateLabel
+                    val (kpis, events) = calculateKpisAndEvents(
+                        screenings = updatedAll,
+                        now = now,
+                        nowMin = cinemaMinutes,
+                        lastUpdatedEpochMs = effectiveEpoch
+                    )
+                    val filtered = applyFilterAndSort(
+                        all = updatedAll,
+                        nowMin = cinemaMinutes,
+                        type = state.filterType,
+                        query = state.searchQuery,
+                        movieTitle = state.selectedMovieTitle,
+                        sortBy = state.sortBy,
+                        showEnded = state.showEnded
+                    )
+                    val updatedSelected = state.selectedScreening?.let { sel ->
+                        updatedAll.firstOrNull { it.id == sel.id } ?: sel
+                    }
+                    state.copy(
+                        seatMapUpdateInProgress = false,
+                        hasUnverifiedSeatStatuses = updatedAll.any { it.seatSummary?.hasUnverifiedStatuses == true },
+                        lastSuccessfulUpdateEpochMs = effectiveEpoch,
+                        lastSuccessfulUpdateLabel = effectiveLabel,
+                        dataFreshnessLabel = computeFreshnessLabel(effectiveEpoch, state.isLiveDataSource),
+                        allScreenings = updatedAll,
+                        filteredScreenings = filtered,
+                        timelineEvents = events,
+                        kpiStats = kpis,
+                        selectedScreening = updatedSelected
+                    )
+                }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(seatMapUpdateInProgress = false) }
+            }
+        }
     }
 }

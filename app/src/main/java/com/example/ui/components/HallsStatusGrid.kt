@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material3.Icon
@@ -73,6 +74,7 @@ fun HallsStatusGrid(
     currentCinemaMinutes: Int,
     cinemaRepository: CinemaRepository,
     onScreeningClick: (Screening) -> Unit,
+    onOpenSeatMap: ((Screening?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val hallStates = remember(allScreenings, currentCinemaMinutes) {
@@ -120,13 +122,43 @@ fun HallsStatusGrid(
             icon = Icons.Filled.GridView,
             iconTint = PlanetRoseLight,
             trailing = {
-                StatusPill(
-                    text = "$activeCount / 24 פעילים",
-                    textColor = PlanetRoseLight,
-                    containerColor = PlanetRoseGlow,
-                    borderColor = PlanetRose.copy(alpha = 0.4f),
-                    leadingDotColor = if (activeCount > 0) PlanetRoseLight else null
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (onOpenSeatMap != null) {
+                        val defaultTarget = remember(hallStates, allScreenings) {
+                            hallStates.firstNotNullOfOrNull { it.liveScreening }
+                                ?: allScreenings.firstOrNull { it.seatSummary != null }
+                                ?: allScreenings.firstOrNull()
+                        }
+                        if (defaultTarget != null) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                    .clip(RoundedCornerShape(PlanetRadius.pill))
+                                    .clickable { onOpenSeatMap(defaultTarget) }
+                                    .testTag("open_seat_map_from_halls_button")
+                            ) {
+                                StatusPill(
+                                    text = "מפת מושבים",
+                                    textColor = PlanetGold,
+                                    containerColor = PlanetAmberGlow,
+                                    borderColor = PlanetAmber.copy(alpha = 0.45f),
+                                    leadingIcon = Icons.Filled.EventSeat
+                                )
+                            }
+                        }
+                    }
+                    StatusPill(
+                        text = "$activeCount / 24 פעילים",
+                        textColor = PlanetRoseLight,
+                        containerColor = PlanetRoseGlow,
+                        borderColor = PlanetRose.copy(alpha = 0.4f),
+                        leadingDotColor = if (activeCount > 0) PlanetRoseLight else null
+                    )
+                }
             }
         )
 
