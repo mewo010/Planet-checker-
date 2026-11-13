@@ -412,7 +412,10 @@ fun ScreeningTicketCard(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Crowd Level & Meter
-                val capacityDisplay = screening.roomCapacity()
+                val origCap = screening.originalHallCapacity()
+                val brokenCount = screening.brokenSeatsCount()
+                val usableCap = screening.usableHallCapacity()
+                val capacityDisplay = usableCap ?: screening.roomCapacity()
                 val occupiedDisplay = screening.estimatedOccupiedSeats()
                 val isUnknownAvailability = screening.availabilityRatio == null || occupiedDisplay == null
                 Column(
@@ -476,6 +479,24 @@ fun ScreeningTicketCard(
                         trackColor = PlanetDarkBg,
                         strokeCap = StrokeCap.Round
                     )
+
+                    if (!screening.isBrokenSeatsKnown()) {
+                        Text(
+                            text = "מקור: ${origCap ?: "?"} • מושבים תקולים וקיבולת שמישה: לא ידוע",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color = PlanetAmber,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else if ((brokenCount ?: 0) > 0) {
+                        Text(
+                            text = "קיבולת שמישה: ${usableCap ?: "?"} (מקור ${origCap ?: "?"} • $brokenCount תקולים)",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color = PlanetTextMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }

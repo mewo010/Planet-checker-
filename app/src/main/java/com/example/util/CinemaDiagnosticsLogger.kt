@@ -52,6 +52,10 @@ object CinemaDiagnosticsLogger {
                 append("blk=${diag.blockedSeats ?: "?"}, ")
                 append("unk=${diag.unknownSeats ?: "?"}, ")
                 append("cap=${diag.roomCapacity ?: "?"}, ")
+                append("origCap=${diag.originalHallCapacity ?: "?"}, ")
+                append("broken=${diag.brokenSeatsCount ?: "unknown"}, ")
+                append("usableCap=${diag.usableHallCapacity ?: "unknown"}, ")
+                append("brokenKnown=${diag.brokenSeatsKnown}, ")
                 append("counted=${diag.countedOccupiedSeats ?: "null"}, ")
                 append("kind=${diag.occupancyKind.name}, ")
                 if (diag.observedPropertyKeys.isNotEmpty()) {

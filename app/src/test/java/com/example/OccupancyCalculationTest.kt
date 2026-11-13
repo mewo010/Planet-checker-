@@ -76,11 +76,11 @@ class OccupancyCalculationTest {
         val raw = listOf(
             // Ended at 17:00 + 15 = 17:15
             RawScreening("Ended Film", "אולם 1", "15:00", "17:00", 0.1f, presentationId = "101"),
-            // Active 1: Hall 5 (400 cap), 0.25 avail -> 300 occupied
+            // Active 1: Hall 5 (400 orig, 2 broken -> 398 usable), 0.25 avail -> 299 occupied
             RawScreening("IMAX Hit", "אולם 5", "18:30", "21:00", 0.25f, presentationId = "102"),
-            // Active 2: Hall 21 VIP (54 cap), 0.50 avail -> 27 occupied
+            // Active 2: Hall 21 VIP (54 orig, 0 broken -> 54 usable), 0.50 avail -> 27 occupied
             RawScreening("VIP Drama", "אולם 21 (VIP)", "19:00", "21:00", 0.50f, presentationId = "103"),
-            // Active 3: Hall 20 4DX (124 cap), 0.0 avail -> 124 occupied
+            // Active 3: Hall 20 4DX (124 orig, broken=null -> usable unknown, fallback 124), 0.0 avail -> 124 occupied
             RawScreening("4DX Action", "אולם 20", "19:15", "21:15", 0.0f, presentationId = "104"),
             // Upcoming: starts 21:00
             RawScreening("Late Film", "אולם 7", "21:00", "23:00", 0.1f, presentationId = "105")
@@ -93,13 +93,14 @@ class OccupancyCalculationTest {
         assertEquals(3, result.countedScreenings)
         assertEquals(0, result.missingScreenings)
         assertEquals(0, result.failedScreenings)
+        assertEquals(1, result.unknownBrokenSeatsScreenings)
         assertFalse(result.unknownOccupancy)
         assertTrue(result.isComplete)
 
         val sumOfIncluded = result.screeningDiagnostics
             .filter { it.includedInOccupancyTotal }
             .sumOf { it.countedOccupiedSeats ?: 0 }
-        assertEquals(300 + 27 + 124, result.occupiedSeats)
+        assertEquals(299 + 27 + 124, result.occupiedSeats)
         assertEquals(result.occupiedSeats, sumOfIncluded)
         assertEquals(result.occupiedSeats, currentlyOccupiedSeats(screenings, now))
     }
@@ -234,10 +235,10 @@ class OccupancyCalculationTest {
         // Exactly 2 unique screenings (Dune deduplicated + Extra included)
         assertEquals(2, merged.size)
         val occupancy = calculateCinemaOccupancy(merged, now)
-        // Hall 7 (311 * 0.5 = 156) + Hall 10 (217 * 1.0 = 217) = 373 (NOT 156+156=312 and NOT 0+217=217!)
+        // Hall 7 (usable 309 * 0.5 = 155) + Hall 10 (usable 214 * 1.0 = 214) = 369
         assertEquals(2, occupancy.activeScreenings)
         assertEquals(2, occupancy.countedScreenings)
-        assertEquals(156 + 217, occupancy.occupiedSeats)
+        assertEquals(155 + 214, occupancy.occupiedSeats)
 
         // Also test deduplicateScreenings directly when one lacks presentationId initially
         val manualDupes = repo.prepareScreenings(
@@ -336,7 +337,7 @@ class OccupancyCalculationTest {
         CinemaDiagnosticsLogger.logOccupancyCalculation("unitTest", result)
 
         assertEquals(3, captured.size)
-        assertTrue(captured[0].contains("occupiedSeats=156"))
+        assertTrue(captured[0].contains("occupiedSeats=155"))
         assertTrue(captured[0].contains("active=2"))
         assertTrue(captured[1].contains("pid=pid_log"))
         assertTrue(captured[1].contains("included=true"))

@@ -157,6 +157,10 @@ object LiveValidationSnapshotBuilder {
             presentationId = diag.presentationId,
             presentationCode = diag.presentationCode,
             officialRoomCapacity = officialCap,
+            brokenSeatsCount = diag.brokenSeatsCount,
+            usableHallCapacity = diag.usableHallCapacity,
+            brokenSeatsKnown = diag.brokenSeatsKnown,
+            brokenSeatsExcludedByLiveMap = diag.brokenSeatsExcludedByLiveMap,
             firstUrlAvailabilityRatio = trace?.firstUrlRatio,
             hourlyUrlAvailabilityRatio = trace?.hourlyUrlRatio,
             effectiveGistAvailabilityRatio = effectiveGistRatio,
@@ -379,6 +383,10 @@ object LiveValidationSnapshotBuilder {
 
         if (allPassed) {
             notes.add("All 6 counting accuracy invariants passed cleanly on ${activeEntries.size} active screenings.")
+        }
+        val unknownBrokenActive = activeEntries.count { !it.brokenSeatsKnown }
+        if (unknownBrokenActive > 0) {
+            notes.add("$unknownBrokenActive active screening(s) are in hall(s) with UNKNOWN broken-seat counts; usable capacity marked incomplete.")
         }
 
         return CountingAccuracyVerification(

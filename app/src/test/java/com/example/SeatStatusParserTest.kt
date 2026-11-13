@@ -278,9 +278,10 @@ class SeatStatusParserTest {
         // Movie Unknown has null ratio -> estimatedOccupiedSeats must be null (never 0 or fake)
         assertNull(screenings[2].estimatedOccupiedSeats())
 
-        // Hall 7 capacity = 311, 0.5 availability -> ~156 occupied initially
+        // Hall 7 original capacity = 311, broken = 2 -> usable = 309, 0.5 availability -> ~155 occupied initially
         assertEquals(311, screenings[0].roomCapacity())
-        assertEquals(156, screenings[0].estimatedOccupiedSeats())
+        assertEquals(309, screenings[0].usableHallCapacity())
+        assertEquals(155, screenings[0].estimatedOccupiedSeats())
 
         // Merge live seat map for presentationId 1001: 100 seats total (80 available, 15 occupied, 5 reserved)
         val liveSeatJson = """

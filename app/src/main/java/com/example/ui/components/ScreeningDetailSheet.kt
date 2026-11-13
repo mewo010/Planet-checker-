@@ -248,8 +248,15 @@ fun ScreeningDetailSheet(
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
+                            val usableHero = screening.usableHallCapacity()
+                            val origHero = screening.originalHallCapacity() ?: screening.capacity
+                            val heroCapLabel = if (usableHero != null) {
+                                "$usableHero שמישים (מקור ${origHero ?: "?"})"
+                            } else {
+                                "${origHero ?: "?"} מקור • שמיש לא ידוע"
+                            }
                             Text(
-                                text = "${screening.capacity ?: "?"} מקומות",
+                                text = heroCapLabel,
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                                 color = PlanetGold
                             )
@@ -270,7 +277,11 @@ fun ScreeningDetailSheet(
             }
 
             // Crowd & Occupancy Box
-            val effectiveCapacity = screening.roomCapacity()
+            val origHallCap = screening.originalHallCapacity()
+            val brokenSeats = screening.brokenSeatsCount()
+            val usableCap = screening.usableHallCapacity()
+            val brokenKnown = screening.isBrokenSeatsKnown()
+            val effectiveCapacity = usableCap ?: screening.roomCapacity()
             val occupiedSeats = screening.estimatedOccupiedSeats()
             val hasKnownRatio = screening.availabilityRatio != null && occupiedSeats != null
             Box(
@@ -345,6 +356,63 @@ fun ScreeningDetailSheet(
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             color = PlanetAmber
                         )
+                    }
+
+                    // Hall Capacity Breakdown (Original vs Manual Broken vs Usable + Known/Unknown)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(PlanetDarkBg.copy(alpha = 0.7f))
+                            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(10.dp))
+                            .padding(10.dp)
+                            .testTag("detail_capacity_breakdown"),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "קיבולת אולם ומושבים תקולים",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
+                            )
+                            Text(
+                                text = if (brokenKnown) "דיווח ידוע" else "סטטוס לא ידוע",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                ),
+                                color = if (brokenKnown) PlanetEmeraldLight else PlanetAmber
+                            )
+                        }
+                        Text(
+                            text = "קיבולת אולם מקורית: ${origHallCap ?: "לא ידוע"} מקומות",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            color = PlanetTextSecondary
+                        )
+                        Text(
+                            text = "מושבים תקולים / לא שמישים (דיווח ידני): ${brokenSeats?.toString() ?: "לא ידוע"}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            color = if (brokenKnown) PlanetTextSecondary else PlanetAmber
+                        )
+                        Text(
+                            text = "קיבולת שמישה בפועל: ${usableCap?.let { "$it מקומות" } ?: "לא ידוע (נתון חלקי)"}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = if (usableCap != null) PlanetGold else PlanetAmber
+                        )
+                        if (screening.brokenSeatsExcludedByLiveMap()) {
+                            Text(
+                                text = "מפת המושבים החיה כבר מחריגה מושבים תקולים/חסומים — לא בוצעה הפחתה כפולה.",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = PlanetEmeraldLight
+                            )
+                        }
                     }
 
                     screening.seatSummary?.let { summary ->

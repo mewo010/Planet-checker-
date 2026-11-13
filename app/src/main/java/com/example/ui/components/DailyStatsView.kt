@@ -65,6 +65,7 @@ import com.example.data.model.OccupancyResult
 import com.example.data.model.QuickBookSourceStatus
 import com.example.data.model.RoomType
 import com.example.data.model.ScreeningOccupancyDiagnostic
+import com.example.data.repository.CinemaRepository
 import com.example.ui.theme.PlanetAmber
 import com.example.ui.theme.PlanetAmberGlow
 import com.example.ui.theme.PlanetBorder
@@ -352,6 +353,118 @@ private fun LiveDataQualityDashboardCard(
                 onToggleJsonPreview = { showSnapshotJson = !showSnapshotJson }
             )
         }
+
+        // Hall Capacity & Broken Seats Audit (24 auditoriums)
+        HallCapacityAuditSection()
+    }
+}
+
+@Composable
+private fun HallCapacityAuditSection() {
+    var expanded by remember { mutableStateOf(false) }
+    val hallInfos = remember { CinemaRepository.getAllHallCapacities() }
+    val totalOriginal = remember(hallInfos) { hallInfos.sumOf { it.originalCapacity ?: 0 } }
+    val knownInfos = remember(hallInfos) { hallInfos.filter { it.isBrokenSeatsKnown } }
+    val totalKnownBroken = remember(knownInfos) { knownInfos.sumOf { it.brokenSeats ?: 0 } }
+    val totalKnownUsable = remember(knownInfos) { knownInfos.sumOf { it.usableCapacity ?: 0 } }
+    val unknownHalls = remember(hallInfos) { hallInfos.filter { !it.isBrokenSeatsKnown } }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(PlanetDarkBg.copy(alpha = 0.78f))
+            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(12.dp))
+            .padding(10.dp)
+            .testTag("hall_capacity_audit_section"),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "בקרת קיבולת אולמות ומושבים תקולים",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    ),
+                    color = Color.White
+                )
+                Text(
+                    text = "מקור (24 אולמות): $totalOriginal • תקולים מאומתים (23 אולמות): $totalKnownBroken • שמיש ידוע: $totalKnownUsable",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                    color = PlanetTextSecondary
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(PlanetCardBg)
+                    .border(1.dp, PlanetBorder, RoundedCornerShape(6.dp))
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .testTag("toggle_hall_capacity_table_button")
+            ) {
+                Text(
+                    text = if (expanded) "הסתר פירוט" else "פירוט 24 אולמות",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = PlanetImaxSkyLight
+                )
+            }
+        }
+
+        if (unknownHalls.isNotEmpty()) {
+            val unknownLabels = unknownHalls.joinToString(", ") { "אולם ${it.hallNumber} (מקור ${it.originalCapacity ?: "?"})" }
+            Text(
+                text = "לא ידוע (${unknownHalls.size}): $unknownLabels — בשיפוץ, מושבים תקולים וקיבולת שמישה מסומנים כ'לא ידוע' (null).",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 13.sp),
+                color = PlanetAmber
+            )
+        }
+
+        if (expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                hallInfos.forEach { info ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(PlanetCardBg.copy(alpha = 0.6f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "אולם ${info.hallNumber ?: "?"}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            ),
+                            color = Color.White
+                        )
+                        Text(
+                            text = if (info.isBrokenSeatsKnown) {
+                                "מקור ${info.originalCapacity} • תקולים ${info.brokenSeats} • שמיש ${info.usableCapacity} (ידוע)"
+                            } else {
+                                "מקור ${info.originalCapacity ?: "?"} • תקולים לא ידוע • שמיש לא ידוע"
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            color = if (info.isBrokenSeatsKnown) PlanetTextSecondary else PlanetAmber
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -611,6 +724,9 @@ private fun DiagnosticScreeningRow(diag: ScreeningOccupancyDiagnostic) {
         }
         val detail = buildString {
             append(diag.presentationId?.let { "PID=$it" } ?: "ללא PID")
+            append(" • מקור=${diag.originalHallCapacity ?: "?"}")
+            append(" • תקולים=${diag.brokenSeatsCount ?: "לא ידוע"}")
+            append(" • שמיש=${diag.usableHallCapacity ?: "לא ידוע"}")
             diag.presentationCode?.let { append(" • Code=$it") }
             diag.seatApiHttpCode?.let { append(" • HTTP $it") }
             diag.exclusionReason?.let { append(" • $it") }
@@ -622,7 +738,7 @@ private fun DiagnosticScreeningRow(diag: ScreeningOccupancyDiagnostic) {
             text = detail,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontFamily = FontFamily.Monospace),
             color = PlanetTextMuted,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
     }

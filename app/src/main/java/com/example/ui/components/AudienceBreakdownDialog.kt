@@ -315,8 +315,12 @@ private fun ActiveRoomRow(screening: Screening) {
                         overflow = TextOverflow.Ellipsis
                     )
 
+                    val origCap = screening.originalHallCapacity()
+                    val broken = screening.brokenSeatsCount()
+                    val usable = screening.usableHallCapacity()
                     val diagNote = buildString {
                         append(screening.presentationId?.let { "PID: $it" } ?: "ללא PID")
+                        append(" • מקור ${origCap ?: "?"} | תקולים ${broken ?: "לא ידוע"} | שמיש ${usable ?: "לא ידוע"}")
                         screening.seatApiHttpCode?.let { append(" • HTTP $it") }
                         screening.seatSummary?.let { s ->
                             append(" • מאומת ${s.totalValidSeats}/לא ידוע ${s.unknownSeats}")
@@ -326,7 +330,7 @@ private fun ActiveRoomRow(screening: Screening) {
                         text = diagNote,
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
                         color = PlanetTextMuted,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }

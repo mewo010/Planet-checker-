@@ -83,6 +83,58 @@ enum class OccupancyCountKind(val hebrewLabel: String) {
     UNKNOWN("לא ידוע")
 }
 
+enum class UsableCapacityStatus(val hebrewLabel: String) {
+    KNOWN("קיבולת שמישה ידועה"),
+    UNKNOWN_BROKEN_SEATS("מושבים תקולים לא ידועים"),
+    UNKNOWN_HALL("אולם לא מוכר")
+}
+
+data class HallCapacityInfo(
+    val hallNumber: Int?,
+    val originalCapacity: Int?,
+    val brokenSeats: Int?,
+    val usableCapacity: Int?,
+    val isBrokenSeatsKnown: Boolean,
+    val status: UsableCapacityStatus
+)
+
+/**
+ * Computes usable capacity = originalCapacity - brokenSeats, clamped >= 0.
+ * - Returns null when either originalCapacity or brokenSeats is null (never silently treats null as 0).
+ * - Preserves originalCapacity when brokenSeats == 0 (confirmed no broken seats).
+ */
+fun calculateUsableCapacity(originalCapacity: Int?, brokenSeats: Int?): Int? {
+    if (originalCapacity == null || brokenSeats == null) return null
+    val sanitizedBroken = brokenSeats.coerceAtLeast(0)
+    return (originalCapacity - sanitizedBroken).coerceAtLeast(0)
+}
+
+/**
+ * Computes usable/bookable capacity from a verified live seat map without double-subtracting
+ * broken seats that are already omitted from the map or classified as BLOCKED/UNAVAILABLE/UNKNOWN.
+ */
+fun resolveLiveSeatMapUsableCapacity(
+    originalCapacity: Int?,
+    manualBrokenSeats: Int?,
+    summary: SeatAvailabilitySummary
+): Int {
+    val sellableInMap = (summary.totalValidSeats - summary.blockedSeats - summary.unavailableSeats)
+        .coerceAtLeast(0)
+    val omittedFromOriginal = originalCapacity?.let {
+        (it - summary.totalRawSeatObjects).coerceAtLeast(0)
+    } ?: 0
+    val alreadyExcludedByMap = summary.blockedSeats +
+        summary.unavailableSeats +
+        summary.unknownSeats +
+        omittedFromOriginal
+    val remainingManualBroken = if (manualBrokenSeats != null) {
+        (manualBrokenSeats.coerceAtLeast(0) - alreadyExcludedByMap).coerceAtLeast(0)
+    } else {
+        0
+    }
+    return (sellableInMap - remainingManualBroken).coerceAtLeast(0)
+}
+
 data class QuickBookSourceStatus(
     val stateLabel: String = "טרם נבדק",
     val httpCode: Int? = null,
@@ -198,6 +250,27 @@ data class Screening(
     }
 
     /**
+     * Original official hall capacity before subtracting broken seats.
+     */
+    fun originalHallCapacity(): Int? =
+        roomNumber?.let { CinemaRepository.HALL_CAPACITIES[it] } ?: capacity
+
+    /**
+     * Manually reported broken seats count for this screening's hall (null = unknown).
+     */
+    fun brokenSeatsCount(): Int? =
+        roomNumber?.let { CinemaRepository.BROKEN_SEATS_BY_HALL[it] }
+
+    /**
+     * True only when both original capacity and broken-seat count (including explicit 0) are known.
+     */
+    fun isBrokenSeatsKnown(): Boolean =
+        originalHallCapacity() != null && brokenSeatsCount() != null
+
+    fun hallCapacityInfo(): HallCapacityInfo =
+        CinemaRepository.getHallCapacityInfo(roomNumber, fallbackOriginalCapacity = originalHallCapacity())
+
+    /**
      * Returns verified seat map capacity ONLY when statuses across the layout are verified;
      * otherwise falls back to official hall capacity so partial/unverified seat lists never
      * shrink auditorium size.
@@ -215,13 +288,56 @@ data class Screening(
         return verifiedSeatCount ?: capacity ?: roomNumber?.let { CinemaRepository.HALL_CAPACITIES[it] }
     }
 
+    /**
+     * Computes usable hall capacity:
+     * - For verified live seat maps: excludes BLOCKED/UNAVAILABLE/UNKNOWN/omitted seats once without
+     *   double-subtracting manually reported broken seats already reflected in the map.
+     * - For unverified or schedule-ratio screenings: returns `originalHallCapacity - brokenSeats`
+     *   (never negative), or `null` when brokenSeats is null/unknown.
+     */
+    fun usableHallCapacity(): Int? {
+        val summary = seatSummary
+        if (summary != null &&
+            summary.availabilityRatio != null &&
+            !summary.hasUnverifiedStatuses &&
+            summary.totalValidSeats > 0
+        ) {
+            return resolveLiveSeatMapUsableCapacity(
+                originalCapacity = originalHallCapacity(),
+                manualBrokenSeats = brokenSeatsCount(),
+                summary = summary
+            )
+        }
+        return calculateUsableCapacity(originalHallCapacity(), brokenSeatsCount())
+    }
+
+    fun brokenSeatsExcludedByLiveMap(): Boolean {
+        val summary = seatSummary ?: return false
+        if (summary.availabilityRatio == null || summary.hasUnverifiedStatuses || summary.totalValidSeats <= 0) {
+            return false
+        }
+        val manualBroken = brokenSeatsCount()
+            ?: return (summary.blockedSeats + summary.unavailableSeats + summary.unknownSeats) > 0
+        val omittedFromOriginal = originalHallCapacity()?.let {
+            (it - summary.totalRawSeatObjects).coerceAtLeast(0)
+        } ?: 0
+        val alreadyExcluded = summary.blockedSeats + summary.unavailableSeats + summary.unknownSeats + omittedFromOriginal
+        return manualBroken > 0 && alreadyExcluded >= manualBroken
+    }
+
+    /**
+     * Capacity used for ratio-based occupancy estimation: prefers usable capacity when known,
+     * falling back to original capacity only when broken-seat count is unknown (never mutating usableHallCapacity to non-null).
+     */
+    fun effectiveRatioCapacity(): Int? = usableHallCapacity() ?: roomCapacity()
+
     fun occupancyCountKind(): OccupancyCountKind {
         val summary = seatSummary
         if (summary != null && summary.totalValidSeats > 0 && summary.availabilityRatio != null) {
             return OccupancyCountKind.VERIFIED_SEAT_MAP
         }
         val ratio = availabilityRatio?.toDouble()?.takeIf { it in 0.0..1.0 }
-        val cap = roomCapacity()
+        val cap = effectiveRatioCapacity()
         if (ratio != null && cap != null) {
             return OccupancyCountKind.RATIO_ESTIMATE
         }
@@ -230,7 +346,8 @@ data class Screening(
 
     /**
      * Estimates occupied seats cleanly without fabricating numbers for unknown states.
-     * Prefers actual parsed occupied + reserved seat count from seats-statusV2 when verified.
+     * Prefers actual parsed occupied + reserved seat count from seats-statusV2 when verified,
+     * and uses usable capacity for ratio-based occupancy estimates when known.
      */
     fun estimatedOccupiedSeats(): Int? {
         val summary = seatSummary
@@ -238,7 +355,7 @@ data class Screening(
             return summary.occupiedAndReservedSeats.coerceIn(0, summary.totalValidSeats)
         }
         val ratio = availabilityRatio?.toDouble()?.takeIf { it in 0.0..1.0 } ?: return null
-        val cap = roomCapacity() ?: return null
+        val cap = effectiveRatioCapacity() ?: return null
         return ((cap * (1.0 - ratio)).roundToInt()).coerceIn(0, cap)
     }
 
@@ -327,6 +444,11 @@ data class ScreeningOccupancyDiagnostic(
     val blockedSeats: Int?,
     val unknownSeats: Int?,
     val roomCapacity: Int?,
+    val originalHallCapacity: Int? = roomCapacity,
+    val brokenSeatsCount: Int? = null,
+    val usableHallCapacity: Int? = null,
+    val brokenSeatsKnown: Boolean = false,
+    val brokenSeatsExcludedByLiveMap: Boolean = false,
     val countedOccupiedSeats: Int?,
     val verifiedOccupiedSeats: Int = 0,
     val estimatedOccupiedSeats: Int = 0,
@@ -347,6 +469,7 @@ data class OccupancyResult(
     val missingScreenings: Int = 0,
     val missingPresentationIdScreenings: Int = 0,
     val unverifiedSeatStatusScreenings: Int = 0,
+    val unknownBrokenSeatsScreenings: Int = 0,
     val failedScreenings: Int = 0,
     val activeScreenings: Int = 0,
     val completenessPercentage: Int = 100,
@@ -405,11 +528,16 @@ private fun mergeDuplicateScreeningPair(a: Screening, b: Screening): Screening {
     } else {
         primary.roomCapacity() ?: secondary.roomCapacity()
     }
+    val ratioCap = if (hasVerifiedSummary) {
+        resolvedCap
+    } else {
+        primary.usableHallCapacity() ?: secondary.usableHallCapacity() ?: resolvedCap
+    }
     val resolvedEstPeople = when {
         resolvedSummary != null && resolvedSummary.totalValidSeats > 0 && resolvedSummary.availabilityRatio != null ->
             resolvedSummary.occupiedAndReservedSeats
-        resolvedRatio != null && resolvedCap != null ->
-            (resolvedCap * (1.0 - resolvedRatio.toDouble())).roundToInt().coerceIn(0, resolvedCap)
+        resolvedRatio != null && ratioCap != null ->
+            (ratioCap * (1.0 - resolvedRatio.toDouble())).roundToInt().coerceIn(0, ratioCap)
         else -> null
     }
 
@@ -498,6 +626,7 @@ fun calculateCinemaOccupancy(
     var missingCount = 0
     var missingPidCount = 0
     var unverifiedCount = 0
+    var unknownBrokenCount = 0
     var failedCount = 0
     val diagnostics = mutableListOf<ScreeningOccupancyDiagnostic>()
 
@@ -507,6 +636,14 @@ fun calculateCinemaOccupancy(
 
         val summary = screening.seatSummary
         val cap = screening.roomCapacity()
+        val origCap = screening.originalHallCapacity()
+        val brokenCount = screening.brokenSeatsCount()
+        val usableCap = screening.usableHallCapacity()
+        val brokenKnown = screening.isBrokenSeatsKnown()
+        val excludedByLiveMap = screening.brokenSeatsExcludedByLiveMap()
+        if (!brokenKnown) {
+            unknownBrokenCount++
+        }
         val occupied = screening.estimatedOccupiedSeats()
         val kind = screening.occupancyCountKind()
         if (screening.presentationId.isNullOrBlank()) {
@@ -550,6 +687,11 @@ fun calculateCinemaOccupancy(
                     blockedSeats = summary?.blockedSeats,
                     unknownSeats = summary?.unknownSeats,
                     roomCapacity = cap,
+                    originalHallCapacity = origCap,
+                    brokenSeatsCount = brokenCount,
+                    usableHallCapacity = usableCap,
+                    brokenSeatsKnown = brokenKnown,
+                    brokenSeatsExcludedByLiveMap = excludedByLiveMap,
                     countedOccupiedSeats = occupied,
                     verifiedOccupiedSeats = verifiedPart,
                     estimatedOccupiedSeats = estimatedPart,
@@ -606,6 +748,11 @@ fun calculateCinemaOccupancy(
                     blockedSeats = summary?.blockedSeats,
                     unknownSeats = summary?.unknownSeats,
                     roomCapacity = cap,
+                    originalHallCapacity = origCap,
+                    brokenSeatsCount = brokenCount,
+                    usableHallCapacity = usableCap,
+                    brokenSeatsKnown = brokenKnown,
+                    brokenSeatsExcludedByLiveMap = excludedByLiveMap,
                     countedOccupiedSeats = null,
                     verifiedOccupiedSeats = 0,
                     estimatedOccupiedSeats = 0,
@@ -633,6 +780,7 @@ fun calculateCinemaOccupancy(
         missingScreenings = missingCount,
         missingPresentationIdScreenings = missingPidCount,
         unverifiedSeatStatusScreenings = unverifiedCount,
+        unknownBrokenSeatsScreenings = unknownBrokenCount,
         failedScreenings = failedCount,
         activeScreenings = activeCount,
         completenessPercentage = completeness,
@@ -728,9 +876,10 @@ fun mergeScreeningAvailability(
                     // Seat statuses are unverified/UNKNOWN in live response: attach raw summary honestly
                     // WITHOUT shrinking hall capacity or overwriting known schedule estimate with null.
                     val fallbackRatio = screening.availabilityRatio?.takeIf { it in 0f..1f } ?: hourlyRatio
-                    val recalcEst = if (fallbackRatio != null && effectiveCapacity != null) {
-                        (effectiveCapacity * (1.0 - fallbackRatio.toDouble())).roundToInt()
-                            .coerceIn(0, effectiveCapacity)
+                    val ratioCap = screening.usableHallCapacity() ?: effectiveCapacity
+                    val recalcEst = if (fallbackRatio != null && ratioCap != null) {
+                        (ratioCap * (1.0 - fallbackRatio.toDouble())).roundToInt()
+                            .coerceIn(0, ratioCap)
                     } else null
                     val pct = if (fallbackRatio != null) {
                         ((1.0 - fallbackRatio.toDouble()) * 100.0).roundToInt().coerceIn(0, 100)
@@ -819,9 +968,9 @@ fun mergeScreeningAvailability(
             }
 
             hourlyRatio != null -> {
-                val cap = screening.roomCapacity()
+                val ratioCap = screening.effectiveRatioCapacity() ?: screening.roomCapacity()
                 val occPct = ((1f - hourlyRatio) * 100f).roundToInt().coerceIn(0, 100)
-                val estPeople = if (cap != null) (cap * (1.0 - hourlyRatio.toDouble())).roundToInt().coerceIn(0, cap) else null
+                val estPeople = if (ratioCap != null) (ratioCap * (1.0 - hourlyRatio.toDouble())).roundToInt().coerceIn(0, ratioCap) else null
                 val updatedTrace = (screening.sourceSnapshot ?: ScreeningSourceSnapshot(cinemaDate = screening.date?.toString())).copy(
                     inHourlyUrl = true,
                     hourlyUrlRatio = screening.sourceSnapshot?.hourlyUrlRatio ?: hourlyRatio

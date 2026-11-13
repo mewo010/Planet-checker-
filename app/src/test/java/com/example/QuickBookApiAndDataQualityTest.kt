@@ -165,13 +165,14 @@ class QuickBookApiAndDataQualityTest {
         val date = LocalDate.of(2026, 11, 12)
         val now = ZonedDateTime.of(2026, 11, 12, 20, 0, 0, 0, jerusalem)
 
-        // Hall 7 capacity is 311. Feed says 0.50 ratio -> 156 occupied.
+        // Hall 7 original capacity is 311, broken=2 -> usable=309. Feed says 0.50 ratio -> 155 occupied.
         val raw = listOf(
             RawScreening("Big Film", "אולם 7", "19:00", "21:30", 0.50f, presentationId = "777")
         )
         val initial = repo.prepareScreenings(raw, nowMinutes = 1200, defaultDate = date, nowZoned = now)
         assertEquals(311, initial[0].roomCapacity())
-        assertEquals(156, initial[0].estimatedOccupiedSeats())
+        assertEquals(309, initial[0].usableHallCapacity())
+        assertEquals(155, initial[0].estimatedOccupiedSeats())
 
         // Imagine seats-statusV2 only returned 4 open seat objects with unverified tg=1 / svga=1 fields
         val partialUnverifiedJson = """
@@ -194,9 +195,10 @@ class QuickBookApiAndDataQualityTest {
         )
         val screening = merged[0]
 
-        // Critical bug check: capacity must STILL be 311 (NOT shrunk to 4!)
+        // Critical bug check: original capacity must STILL be 311 (NOT shrunk to 4!) and usable 309
         assertEquals(311, screening.roomCapacity())
-        assertEquals(156, screening.estimatedOccupiedSeats())
+        assertEquals(309, screening.usableHallCapacity())
+        assertEquals(155, screening.estimatedOccupiedSeats())
         assertEquals(OccupancyCountKind.RATIO_ESTIMATE, screening.occupancyCountKind())
         assertEquals(200, screening.seatApiHttpCode)
     }

@@ -33,10 +33,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.HallCapacityInfo
 import com.example.data.model.RoomType
 import com.example.data.model.Screening
 import com.example.data.model.ScreeningStatus
 import com.example.data.repository.CinemaRepository
+import com.example.ui.theme.PlanetAmber
 import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
@@ -51,6 +53,7 @@ data class HallState(
     val hallNumber: Int,
     val roomType: RoomType,
     val capacity: Int,
+    val capacityInfo: HallCapacityInfo,
     val liveScreening: Screening?,
     val nextScreening: Screening?
 )
@@ -76,16 +79,19 @@ fun HallsStatusGrid(
         val next = screeningsForHall
             .filter { it.status == ScreeningStatus.UPCOMING && it.startMin > currentCinemaMinutes }
             .minByOrNull { it.startMin }
-        val capacity = live?.roomCapacity()
+        val capacityInfo = CinemaRepository.getHallCapacityInfo(hallNum)
+        val capacity = capacityInfo.usableCapacity
+            ?: capacityInfo.originalCapacity
+            ?: live?.roomCapacity()
             ?: next?.roomCapacity()
             ?: screeningsForHall.firstNotNullOfOrNull { it.roomCapacity() }
-            ?: CinemaRepository.HALL_CAPACITIES[hallNum]
             ?: 0
 
         HallState(
             hallNumber = hallNum,
             roomType = type,
             capacity = capacity,
+            capacityInfo = capacityInfo,
             liveScreening = live,
             nextScreening = next
         )
@@ -308,12 +314,25 @@ private fun HallCard(
                 )
             }
 
-            // Hall capacity footer
-            Text(
-                text = "${hallState.capacity} מקומות ישיבה",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                color = PlanetTextMuted
-            )
+            // Hall capacity footer (Original / Broken / Usable + Known/Unknown state)
+            val capInfo = hallState.capacityInfo
+            if (capInfo.isBrokenSeatsKnown) {
+                Text(
+                    text = "${capInfo.usableCapacity} שמישים • ${capInfo.brokenSeats} תקולים (מקור ${capInfo.originalCapacity})",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 12.sp),
+                    color = PlanetTextMuted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            } else {
+                Text(
+                    text = "מקור ${capInfo.originalCapacity ?: "?"} • תקולים: לא ידוע • שמישים: לא ידוע",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 12.sp),
+                    color = PlanetAmber,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

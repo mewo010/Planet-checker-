@@ -182,10 +182,11 @@ class AttendanceHistoryRepository(
             // Active or upcoming screening
             val occupied = screening.estimatedOccupiedSeats()
             val capacity = screening.roomCapacity()
+            val usableOrFallbackCap = screening.usableHallCapacity() ?: capacity
             val summary = screening.seatSummary
             val available = when {
                 summary != null && summary.totalValidSeats > 0 -> summary.availableSeats
-                occupied != null && capacity != null -> (capacity - occupied).coerceAtLeast(0)
+                occupied != null && usableOrFallbackCap != null -> (usableOrFallbackCap - occupied).coerceAtLeast(0)
                 else -> null
             }
             val totalClassified = summary?.totalValidSeats?.takeIf { it > 0 } ?: if (occupied != null) capacity else null

@@ -6,6 +6,7 @@ import com.example.data.diagnostics.SourceTelemetryBundle
 import com.example.data.model.AvailabilitySource
 import com.example.data.model.CrowdLevel
 import com.example.data.model.FirstScheduleResponse
+import com.example.data.model.HallCapacityInfo
 import com.example.data.model.HourlyScheduleResponse
 import com.example.data.model.QuickBookSourceStatus
 import com.example.data.model.RawScreening
@@ -14,8 +15,10 @@ import com.example.data.model.Screening
 import com.example.data.model.ScreeningStatus
 import com.example.data.model.SeatAvailabilitySummary
 import com.example.data.model.SeatFetchState
+import com.example.data.model.UsableCapacityStatus
 import com.example.data.model.calculateCinemaOccupancy
 import com.example.data.model.calculateCrowdLevelForRatio
+import com.example.data.model.calculateUsableCapacity
 import com.example.data.model.canonicalSlotKey
 import com.example.data.model.deduplicateScreenings
 import com.example.data.model.mergeScreeningAvailability
@@ -58,6 +61,65 @@ class CinemaRepository(
             16 to 182, 17 to 182, 18 to 112, 19 to 204, 20 to 124,
             21 to 54, 22 to 54, 23 to 70, 24 to 56
         )
+
+        /**
+         * Manually verified count of broken/unusable seats per auditorium.
+         * - `0` means the hall is confirmed to have zero broken seats.
+         * - `null` (e.g. Hall 20 currently under renovation) means the broken-seat count is UNKNOWN.
+         */
+        val BROKEN_SEATS_BY_HALL: Map<Int, Int?> = mapOf(
+            1 to 3,
+            2 to 3,
+            3 to 2,
+            4 to 3,
+            5 to 2,
+            6 to 2,
+            7 to 2,
+            8 to 3,
+            9 to 0,
+            10 to 3,
+            11 to 2,
+            12 to 3,
+            13 to 3,
+            14 to 3,
+            15 to 3,
+            16 to 3,
+            17 to 3,
+            18 to 3,
+            19 to 2,
+            20 to null,
+            21 to 0,
+            22 to 0,
+            23 to 0,
+            24 to 0
+        )
+
+        fun getHallCapacityInfo(
+            hallNumber: Int?,
+            fallbackOriginalCapacity: Int? = null,
+            originalCapacities: Map<Int, Int> = HALL_CAPACITIES,
+            brokenSeatsByHall: Map<Int, Int?> = BROKEN_SEATS_BY_HALL
+        ): HallCapacityInfo {
+            val original = hallNumber?.let { originalCapacities[it] } ?: fallbackOriginalCapacity
+            val hasHallKey = hallNumber != null && brokenSeatsByHall.containsKey(hallNumber)
+            val broken = if (hasHallKey) brokenSeatsByHall[hallNumber] else null
+            val usable = calculateUsableCapacity(original, broken)
+            val status = when {
+                original == null -> UsableCapacityStatus.UNKNOWN_HALL
+                broken == null -> UsableCapacityStatus.UNKNOWN_BROKEN_SEATS
+                else -> UsableCapacityStatus.KNOWN
+            }
+            return HallCapacityInfo(
+                hallNumber = hallNumber,
+                originalCapacity = original,
+                brokenSeats = broken,
+                usableCapacity = usable,
+                isBrokenSeatsKnown = broken != null && original != null,
+                status = status
+            )
+        }
+
+        fun getAllHallCapacities(): List<HallCapacityInfo> = (1..24).map { getHallCapacityInfo(it) }
 
         val MOVIE_METADATA: Map<String, Pair<String, String>> = mapOf(
             "חולית: חלק שני" to Pair("מדע בדיוני", "#C2410C"),
@@ -577,6 +639,8 @@ class CinemaRepository(
 
             val roomNum = RoomType.extractRoomNumber(raw.room)
             val capacity = roomNum?.let { HALL_CAPACITIES[it] }
+            val hallCapInfo = getHallCapacityInfo(roomNum, fallbackOriginalCapacity = capacity)
+            val ratioCapacity = hallCapInfo.usableCapacity ?: capacity
             val roomType = RoomType.fromRoom(raw.room)
 
             val s = normalizeCinemaMinutes(startParsed)
@@ -590,8 +654,8 @@ class CinemaRepository(
                 ((1f - ratio) * 100f).roundToInt().coerceIn(0, 100)
             } else 0
 
-            val estimatedPeople = if (capacity != null && ratio != null) {
-                (capacity * (1.0 - ratio.toDouble())).roundToInt().coerceIn(0, capacity)
+            val estimatedPeople = if (ratioCapacity != null && ratio != null) {
+                (ratioCapacity * (1.0 - ratio.toDouble())).roundToInt().coerceIn(0, ratioCapacity)
             } else null
 
             val crowdLevel = calculateCrowdLevelForRatio(ratio)

@@ -178,13 +178,13 @@ class AttendanceHistoryRobolectricTest {
         assertNull(snapP1.estimatedOccupiedSeats)
 
         val snapP2 = stats.screeningBreakdowns.first { it.presentationId == "p2" }
-        // Captured near end (50% of 311 = 156), MUST NOT be overwritten by post-end 1.0 availability!
+        // Captured near end (50% of 309 usable = 155), MUST NOT be overwritten by post-end 1.0 availability!
         assertEquals(AttendanceKind.ESTIMATED, snapP2.attendanceKind)
-        assertEquals(156, snapP2.estimatedOccupiedSeats)
+        assertEquals(155, snapP2.estimatedOccupiedSeats)
         assertTrue(snapP2.isFinal)
 
-        // Total completed attendance includes ONLY p2 (156), while p1 counts as completed unknown (1)
-        assertEquals(156, stats.estimatedCompletedAttendance)
+        // Total completed attendance includes ONLY p2 (155), while p1 counts as completed unknown (1)
+        assertEquals(155, stats.estimatedCompletedAttendance)
         assertEquals(1, stats.completedWithKnownAttendance)
         assertEquals(1, stats.completedWithUnknownAttendance)
     }
