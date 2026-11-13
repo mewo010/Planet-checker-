@@ -5,69 +5,68 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.FilterAlt
-import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.example.data.model.RoomType
 import com.example.data.model.Screening
-import com.example.data.model.ScreeningStatus
 import com.example.data.repository.CinemaRepository
 import com.example.ui.theme.PlanetAmber
 import com.example.ui.theme.PlanetBorder
+import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
+import com.example.ui.theme.PlanetEmeraldGlow
 import com.example.ui.theme.PlanetEmeraldLight
 import com.example.ui.theme.PlanetGold
+import com.example.ui.theme.PlanetRadius
 import com.example.ui.theme.PlanetRose
-import com.example.ui.theme.PlanetRoseLight
+import com.example.ui.theme.PlanetSpacing
 import com.example.ui.theme.PlanetSurface
 import com.example.ui.theme.PlanetTextMuted
+import com.example.ui.theme.PlanetTextPrimary
 import com.example.ui.theme.PlanetTextSecondary
-
-import coil.compose.SubcomposeAsyncImage
-import com.example.ui.theme.PlanetBorderSubtle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,9 +86,9 @@ fun ScreeningDetailSheet(
             Box(
                 modifier = Modifier
                     .padding(vertical = 10.dp)
-                    .width(36.dp)
+                    .width(40.dp)
                     .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
+                    .clip(RoundedCornerShape(PlanetRadius.pill))
                     .background(PlanetBorder)
             )
         },
@@ -98,9 +97,10 @@ fun ScreeningDetailSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .navigationBarsPadding()
+                .padding(horizontal = PlanetSpacing.xl, vertical = PlanetSpacing.sm)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(PlanetSpacing.lg)
         ) {
             // Header Bar
             Row(
@@ -110,13 +110,17 @@ fun ScreeningDetailSheet(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(PlanetSpacing.sm)
                 ) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(PlanetRadius.sm))
                             .background(screening.roomType.containerColor)
-                            .border(1.dp, screening.roomType.badgeColor.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                            .border(
+                                1.dp,
+                                screening.roomType.badgeColor.copy(alpha = 0.6f),
+                                RoundedCornerShape(PlanetRadius.sm)
+                            )
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
@@ -135,13 +139,15 @@ fun ScreeningDetailSheet(
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         ),
-                        color = Color.White
+                        color = PlanetTextPrimary
                     )
                 }
 
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
@@ -160,8 +166,8 @@ fun ScreeningDetailSheet(
                     modifier = Modifier
                         .width(96.dp)
                         .aspectRatio(2f / 3f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(PlanetRadius.md))
+                        .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(PlanetRadius.md))
                         .background(PlanetCardBg),
                     contentAlignment = Alignment.Center
                 ) {
@@ -199,7 +205,7 @@ fun ScreeningDetailSheet(
                                 Icon(
                                     imageVector = Icons.Filled.Movie,
                                     contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.4f),
+                                    tint = Color.White.copy(alpha = 0.45f),
                                     modifier = Modifier.size(36.dp)
                                 )
                             }
@@ -217,7 +223,7 @@ fun ScreeningDetailSheet(
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
                         ),
-                        color = Color.White
+                        color = PlanetTextPrimary
                     )
 
                     val formatDescription = when (screening.roomType) {
@@ -234,45 +240,36 @@ fun ScreeningDetailSheet(
                         color = PlanetTextSecondary
                     )
 
-                    // Room specs pill
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = 2.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Filled.EventSeat,
-                                contentDescription = null,
-                                tint = PlanetGold,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            val usableHero = screening.usableHallCapacity()
-                            val origHero = screening.originalHallCapacity() ?: screening.capacity
-                            val heroCapLabel = if (usableHero != null) {
-                                "$usableHero שמישים (מקור ${origHero ?: "?"})"
-                            } else {
-                                "${origHero ?: "?"} מקור • שמיש לא ידוע"
-                            }
-                            Text(
-                                text = heroCapLabel,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                color = PlanetGold
-                            )
-                        }
-
-                        Text(
-                            text = "•",
-                            color = PlanetTextMuted
+                        Icon(
+                            imageVector = Icons.Filled.EventSeat,
+                            contentDescription = null,
+                            tint = PlanetGold,
+                            modifier = Modifier.size(14.dp)
                         )
-
+                        val usableHero = screening.usableHallCapacity()
+                        val origHero = screening.originalHallCapacity() ?: screening.capacity
+                        val heroCapLabel = if (usableHero != null) {
+                            "$usableHero שמישים (מקור ${origHero ?: "?"})"
+                        } else {
+                            "${origHero ?: "?"} מקור • שמיש לא ידוע"
+                        }
                         Text(
-                            text = "רמת עומס: ${screening.crowdLevel.label}",
+                            text = heroCapLabel,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                            color = screening.crowdLevel.color
+                            color = PlanetGold
                         )
                     }
+
+                    StatusPill(
+                        text = "רמת עומס: ${screening.crowdLevel.label}",
+                        textColor = screening.crowdLevel.color,
+                        containerColor = screening.crowdLevel.color.copy(alpha = 0.14f)
+                    )
                 }
             }
 
@@ -284,15 +281,13 @@ fun ScreeningDetailSheet(
             val effectiveCapacity = usableCap ?: screening.roomCapacity()
             val occupiedSeats = screening.estimatedOccupiedSeats()
             val hasKnownRatio = screening.availabilityRatio != null && occupiedSeats != null
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(PlanetCardBg)
-                    .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                    .padding(14.dp)
+
+            DashboardCard(
+                gradientColors = listOf(PlanetCardBg, PlanetSurface),
+                borderColor = PlanetBorder.copy(alpha = 0.6f),
+                contentPadding = PaddingValues(14.dp)
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -301,7 +296,7 @@ fun ScreeningDetailSheet(
                         Text(
                             text = "תפוסת קהל וזמינות מושבים",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
+                            color = PlanetTextPrimary
                         )
                         Text(
                             text = if (hasKnownRatio) {
@@ -309,23 +304,18 @@ fun ScreeningDetailSheet(
                             } else {
                                 "זמינות לא ידועה"
                             },
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontFeatureSettings = "tnum"
+                            ),
                             color = if (hasKnownRatio) screening.crowdLevel.color else PlanetTextMuted
                         )
                     }
 
-                    LinearProgressIndicator(
-                        progress = {
-                            if (hasKnownRatio) (screening.occupancyPercentage / 100f).coerceIn(0f, 1f)
-                            else 0f
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                        color = screening.crowdLevel.progressColor,
-                        trackColor = PlanetDarkBg,
-                        strokeCap = StrokeCap.Round
+                    SmoothProgressBar(
+                        progress = if (hasKnownRatio) (screening.occupancyPercentage / 100f).coerceIn(0f, 1f) else 0f,
+                        color = if (hasKnownRatio) screening.crowdLevel.progressColor else PlanetBorder,
+                        height = 8.dp
                     )
 
                     Row(
@@ -362,9 +352,9 @@ fun ScreeningDetailSheet(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(PlanetDarkBg.copy(alpha = 0.7f))
-                            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(PlanetRadius.md))
+                            .background(PlanetDarkBg.copy(alpha = 0.78f))
+                            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(PlanetRadius.md))
                             .padding(10.dp)
                             .testTag("detail_capacity_breakdown"),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -377,15 +367,12 @@ fun ScreeningDetailSheet(
                             Text(
                                 text = "קיבולת אולם ומושבים תקולים",
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color.White
+                                color = PlanetTextPrimary
                             )
-                            Text(
+                            StatusPill(
                                 text = if (brokenKnown) "דיווח ידוע" else "סטטוס לא ידוע",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp
-                                ),
-                                color = if (brokenKnown) PlanetEmeraldLight else PlanetAmber
+                                textColor = if (brokenKnown) PlanetEmeraldLight else PlanetAmber,
+                                containerColor = if (brokenKnown) PlanetEmeraldGlow else PlanetAmber.copy(alpha = 0.16f)
                             )
                         }
                         Text(
@@ -419,15 +406,15 @@ fun ScreeningDetailSheet(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(PlanetDarkBg.copy(alpha = 0.7f))
+                                .clip(RoundedCornerShape(PlanetRadius.md))
+                                .background(PlanetDarkBg.copy(alpha = 0.78f))
                                 .padding(10.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 text = "פירוט מפת מושבים (seats-statusV2)",
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color.White
+                                color = PlanetTextPrimary
                             )
                             Text(
                                 text = "סה\"כ אובייקטי מושב: ${summary.totalRawSeatObjects} • מאומתים: ${summary.totalValidSeats} • לא ידועים: ${summary.unknownSeats}",
@@ -465,48 +452,46 @@ fun ScreeningDetailSheet(
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
                 ),
-                color = Color.White
+                color = PlanetTextPrimary
             )
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(PlanetCardBg)
-                    .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            DashboardCard(
+                gradientColors = listOf(PlanetCardBg, PlanetSurface),
+                borderColor = PlanetBorder.copy(alpha = 0.6f),
+                contentPadding = PaddingValues(14.dp)
             ) {
-                TimelineStep(
-                    time = cinemaRepository.formatCinemaMinutes(screening.entryMin),
-                    title = "פתיחת דלתות וכניסת קהל",
-                    desc = "20 דקות לפני תחילת ההקרנה. בדיקת כרטיסים ועמדות סדרנים.",
-                    color = PlanetEmeraldLight
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TimelineStep(
+                        time = cinemaRepository.formatCinemaMinutes(screening.entryMin),
+                        title = "פתיחת דלתות וכניסת קהל",
+                        desc = "20 דקות לפני תחילת ההקרנה. בדיקת כרטיסים ועמדות סדרנים.",
+                        color = PlanetEmeraldLight
+                    )
 
-                TimelineStep(
-                    time = cinemaRepository.formatCinemaMinutes(screening.startMin),
-                    title = "תחילת ההקרנה ופרומואים",
-                    desc = "החשכת אורות אולם, פרסומות ותחילת הסרט.",
-                    color = Color.White
-                )
+                    TimelineStep(
+                        time = cinemaRepository.formatCinemaMinutes(screening.startMin),
+                        title = "תחילת ההקרנה ופרומואים",
+                        desc = "החשכת אורות אולם, פרסומות ותחילת הסרט.",
+                        color = PlanetTextPrimary
+                    )
 
-                TimelineStep(
-                    time = cinemaRepository.formatCinemaMinutes(screening.endMin - CinemaRepository.EXTRA_END),
-                    title = "כתוביות סיום",
-                    desc = "הדלקת תאורת מדרגות עמומה, תחילת יציאת צופים ראשונים.",
-                    color = PlanetAmber
-                )
+                    TimelineStep(
+                        time = cinemaRepository.formatCinemaMinutes(screening.endMin - CinemaRepository.EXTRA_END),
+                        title = "כתוביות סיום",
+                        desc = "הדלקת תאורת מדרגות עמומה, תחילת יציאת צופים ראשונים.",
+                        color = PlanetAmber
+                    )
 
-                TimelineStep(
-                    time = cinemaRepository.formatCinemaMinutes(screening.endMin),
-                    title = "סיום פינוי ופתיחת דלתות לניקיון",
-                    desc = "15 דקות תוספת לסיום מוחלט של יציאת הקהל והכשרת האולם להקרנה הבאה.",
-                    color = PlanetGold
-                )
+                    TimelineStep(
+                        time = cinemaRepository.formatCinemaMinutes(screening.endMin),
+                        title = "סיום פינוי ופתיחת דלתות לניקיון",
+                        desc = "15 דקות תוספת לסיום מוחלט של יציאת הקהל והכשרת האולם להקרנה הבאה.",
+                        color = PlanetGold
+                    )
+                }
             }
 
-            // Action Buttons
+            // Action Buttons (48dp accessible height)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -516,9 +501,11 @@ fun ScreeningDetailSheet(
                         onFilterByMovie(screening.title)
                         onDismiss()
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = PlanetRose),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(PlanetRadius.md)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.FilterAlt,
@@ -534,9 +521,11 @@ fun ScreeningDetailSheet(
 
                 OutlinedButton(
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp),
+                    shape = RoundedCornerShape(PlanetRadius.md),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PlanetTextPrimary)
                 ) {
                     Text(
                         text = "סגור",
@@ -545,7 +534,7 @@ fun ScreeningDetailSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(PlanetSpacing.md))
         }
     }
 }
@@ -564,8 +553,9 @@ private fun TimelineStep(
     ) {
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
+                .clip(RoundedCornerShape(PlanetRadius.xs))
                 .background(PlanetDarkBg)
+                .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(PlanetRadius.xs))
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
             Text(
@@ -586,7 +576,7 @@ private fun TimelineStep(
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 ),
-                color = Color.White
+                color = PlanetTextPrimary
             )
             Text(
                 text = desc,

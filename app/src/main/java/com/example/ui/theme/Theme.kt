@@ -1,6 +1,8 @@
 package com.example.ui.theme
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -26,14 +28,22 @@ private val DarkColorScheme = darkColorScheme(
     outlineVariant = PlanetBorderSubtle
 )
 
+private val PlanetShapes = Shapes(
+    extraSmall = RoundedCornerShape(PlanetRadius.xs),
+    small = RoundedCornerShape(PlanetRadius.sm),
+    medium = RoundedCornerShape(PlanetRadius.md),
+    large = RoundedCornerShape(PlanetRadius.lg),
+    extraLarge = RoundedCornerShape(PlanetRadius.xl)
+)
+
 @Composable
 fun PlanetCheckerTheme(
     content: @Composable () -> Unit
 ) {
-    // The cinema staff monitor is an intentional dark-mode experience with glowing status indicators
     MaterialTheme(
         colorScheme = DarkColorScheme,
         typography = Typography,
+        shapes = PlanetShapes,
         content = content
     )
 }

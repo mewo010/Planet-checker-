@@ -1,43 +1,31 @@
 package com.example.ui.components
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -50,16 +38,18 @@ import com.example.data.model.RoomType
 import com.example.data.model.Screening
 import com.example.data.repository.CinemaRepository
 import com.example.ui.theme.PlanetAmber
-import com.example.ui.theme.PlanetBorder
+import com.example.ui.theme.PlanetAmberGlow
 import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
-import com.example.ui.theme.PlanetEmerald
+import com.example.ui.theme.PlanetEmeraldGlow
 import com.example.ui.theme.PlanetEmeraldLight
 import com.example.ui.theme.PlanetGold
-import com.example.ui.theme.PlanetRose
-import com.example.ui.theme.PlanetSurface
+import com.example.ui.theme.PlanetImaxSkyLight
+import com.example.ui.theme.PlanetRadius
+import com.example.ui.theme.PlanetSpacing
 import com.example.ui.theme.PlanetTextMuted
+import com.example.ui.theme.PlanetTextPrimary
 import com.example.ui.theme.PlanetTextSecondary
 
 @Composable
@@ -70,120 +60,92 @@ fun TimelineView(
     onScreeningClick: (Screening) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(PlanetSurface)
-            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(16.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+    DashboardCard(
+        contentPadding = PaddingValues(PlanetSpacing.lg),
+        modifier = modifier.fillMaxWidth()
     ) {
-        // Section Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "ציר עומסי קהל",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp
-                    ),
-                    color = Color.White
-                )
-                Text(
-                    text = "אירועי כניסה ויציאה קרובים (שעתיים קדימה)",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = PlanetTextSecondary
-                )
+        Column(verticalArrangement = Arrangement.spacedBy(PlanetSpacing.md)) {
+            SectionHeaderRow(
+                title = "ציר עומסי קהל",
+                subtitle = "אירועי כניסה ויציאה ב-2 השעות הקרובות",
+                icon = Icons.Filled.Timeline,
+                iconTint = PlanetImaxSkyLight,
+                trailing = {
+                    StatusPill(
+                        text = "${events.size} אירועים",
+                        textColor = PlanetGold,
+                        containerColor = PlanetAmberGlow,
+                        borderColor = PlanetAmber.copy(alpha = 0.35f)
+                    )
+                }
+            )
+
+            if (events.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(PlanetRadius.md))
+                        .background(PlanetDarkBg.copy(alpha = 0.65f))
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(PlanetSpacing.sm)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Bedtime,
+                            contentDescription = null,
+                            tint = PlanetTextMuted,
+                            modifier = Modifier.size(34.dp)
+                        )
+                        Text(
+                            text = "שקט ב-2 השעות הקרובות",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PlanetTextSecondary
+                        )
+                    }
+                }
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(PlanetSpacing.sm),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    events.forEach { event ->
+                        TimelineEventRow(
+                            event = event,
+                            currentCinemaMinutes = currentCinemaMinutes,
+                            cinemaRepository = cinemaRepository,
+                            onClick = { onScreeningClick(event.screening) }
+                        )
+                    }
+                }
             }
 
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(PlanetCardBg)
-                    .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = "${events.size} אירועים",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp
-                    ),
-                    color = PlanetAmber
-                )
-            }
-        }
-
-        // Events list or empty state
-        if (events.isEmpty()) {
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 32.dp),
-                contentAlignment = Alignment.Center
+                    .clip(RoundedCornerShape(PlanetRadius.sm))
+                    .background(PlanetDarkBg.copy(alpha = 0.8f))
+                    .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(PlanetRadius.sm))
+                    .padding(PlanetSpacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Bedtime,
-                        contentDescription = null,
-                        tint = PlanetTextMuted,
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Text(
-                        text = "שקט ב-2 השעות הקרובות",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = PlanetTextMuted
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = PlanetTextMuted,
+                    modifier = Modifier
+                        .size(14.dp)
+                        .padding(top = 2.dp)
+                )
+                Text(
+                    text = "כניסה = 20 דק' לפני תחילת ההקרנה. יציאה = שעת סיום + 15 דק' לפינוי וניקיון. נתוני הצופים מבוססים על הנתונים הזמינים מהקופות.",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 15.sp),
+                    color = PlanetTextMuted
+                )
             }
-        } else {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                events.forEach { event ->
-                    TimelineEventRow(
-                        event = event,
-                        currentCinemaMinutes = currentCinemaMinutes,
-                        cinemaRepository = cinemaRepository,
-                        onClick = { onScreeningClick(event.screening) }
-                    )
-                }
-            }
-        }
-
-        // Helpful guidance footer
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(PlanetDarkBg)
-                .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(8.dp))
-                .padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Info,
-                contentDescription = null,
-                tint = PlanetTextMuted,
-                modifier = Modifier
-                    .size(13.dp)
-                    .padding(top = 1.dp)
-            )
-            Text(
-                text = "כניסה = כ-20 דק' לפני תחילת ההקרנה. יציאה = שעת הסיום כולל 15 דק' תוספת לפינוי וניקיון. נתוני צופים מחושבים ישירות מהקופות.",
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 13.sp),
-                color = PlanetTextMuted
-            )
         }
     }
 }
@@ -199,135 +161,105 @@ private fun TimelineEventRow(
     val isUrgent = event.isUrgent
     val nowEntry = !isOut && event.screening.entryMin <= currentCinemaMinutes
 
-    val transition = rememberInfiniteTransition(label = "urgent_pulse")
-    val pulseAlpha by transition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "urgent_alpha"
-    )
-
-    val borderColor = when {
-        isUrgent -> PlanetAmber.copy(alpha = pulseAlpha)
-        else -> PlanetBorderSubtle
-    }
-
-    val bgColor = when {
-        isUrgent -> PlanetAmber.copy(alpha = 0.08f)
-        else -> PlanetCardBg.copy(alpha = 0.7f)
-    }
-
-    val iconBg = if (isOut) PlanetAmber.copy(alpha = 0.15f) else PlanetEmerald.copy(alpha = 0.15f)
-    val iconColor = if (isOut) PlanetAmber else PlanetEmeraldLight
+    val borderColor = if (isUrgent) PlanetAmber.copy(alpha = 0.65f) else PlanetBorderSubtle
+    val bgColor = if (isUrgent) PlanetAmberGlow else PlanetCardBg.copy(alpha = 0.65f)
+    val iconBg = if (isOut) PlanetAmberGlow else PlanetEmeraldGlow
+    val iconColor = if (isOut) PlanetGold else PlanetEmeraldLight
     val icon = if (isOut) Icons.AutoMirrored.Filled.ExitToApp else Icons.AutoMirrored.Filled.Login
 
     val mainText = when {
         isOut -> "קהל יוצא • ${RoomType.formatRoomLabel(event.screening.room)}"
-        nowEntry -> "קהל נכנס עכשיו • ${RoomType.formatRoomLabel(event.screening.room)}"
-        else -> "קהל מתחיל להגיע • ${RoomType.formatRoomLabel(event.screening.room)}"
+        nowEntry -> "קהל נכנס כעת • ${RoomType.formatRoomLabel(event.screening.room)}"
+        else -> "כניסה קרובה • ${RoomType.formatRoomLabel(event.screening.room)}"
     }
 
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .defaultMinSize(minHeight = 60.dp)
+            .clip(RoundedCornerShape(PlanetRadius.md))
             .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(PlanetRadius.md))
             .clickable(onClick = onClick)
-            .padding(10.dp)
-            .testTag("timeline_event_${event.screening.id}")
+            .padding(horizontal = PlanetSpacing.md, vertical = 10.dp)
+            .testTag("timeline_event_${event.screening.id}"),
+        horizontalArrangement = Arrangement.spacedBy(PlanetSpacing.md),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(PlanetRadius.sm))
+                .background(iconBg),
+            contentAlignment = Alignment.Center
         ) {
-            // Icon
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(iconBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconColor,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(18.dp)
+            )
+        }
 
-            // Info
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = mainText,
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        ),
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (isUrgent) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(PlanetAmber.copy(alpha = 0.2f))
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = "דחוף",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = PlanetGold
-                            )
-                        }
-                    }
-                }
-
-                Text(
-                    text = event.screening.title,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = PlanetTextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            // Time & Countdown
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.Center
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = cinemaRepository.formatCinemaMinutes(event.timeMin),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontFamily = FontFamily.Monospace,
+                    text = mainText,
+                    style = MaterialTheme.typography.titleSmall.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        fontSize = 13.sp
                     ),
-                    color = if (isUrgent) PlanetGold else Color.White
+                    color = PlanetTextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
 
-                val countText = event.screening.estimatedPeople?.let { " • ~$it" } ?: ""
-                Text(
-                    text = "${cinemaRepository.relativeTimeSpan(event.minutesUntil)}$countText",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
-                    color = if (isUrgent) PlanetAmber else PlanetTextMuted
-                )
+                if (isUrgent) {
+                    StatusPill(
+                        text = "דחוף",
+                        textColor = PlanetGold,
+                        containerColor = PlanetAmber.copy(alpha = 0.2f)
+                    )
+                }
             }
+
+            Text(
+                text = event.screening.title,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = PlanetTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = cinemaRepository.formatCinemaMinutes(event.timeMin),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                ),
+                color = if (isUrgent) PlanetGold else PlanetTextPrimary
+            )
+
+            val countText = event.screening.estimatedPeople?.let { " • ~$it צופים" } ?: ""
+            Text(
+                text = "${cinemaRepository.relativeTimeSpan(event.minutesUntil)}$countText",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isUrgent) PlanetAmber else PlanetTextMuted,
+                maxLines = 1
+            )
         }
     }
 }

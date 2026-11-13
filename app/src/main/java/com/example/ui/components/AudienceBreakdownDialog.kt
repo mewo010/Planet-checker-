@@ -5,10 +5,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,34 +18,50 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MeetingRoom
+import androidx.compose.material.icons.filled.QueryStats
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.OccupancyResult
 import com.example.data.model.RoomType
 import com.example.data.model.Screening
 import com.example.data.model.ScreeningStatus
+import com.example.data.model.deduplicateScreenings
+import com.example.ui.theme.PlanetAmber
+import com.example.ui.theme.PlanetAmberGlow
 import com.example.ui.theme.PlanetBorder
+import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
-import com.example.ui.theme.PlanetEmerald
+import com.example.ui.theme.PlanetDarkBg
+import com.example.ui.theme.PlanetEmeraldGlow
 import com.example.ui.theme.PlanetEmeraldLight
+import com.example.ui.theme.PlanetGold
+import com.example.ui.theme.PlanetImaxSkyLight
+import com.example.ui.theme.PlanetNavy
+import com.example.ui.theme.PlanetRadius
 import com.example.ui.theme.PlanetRose
+import com.example.ui.theme.PlanetRoseGlow
 import com.example.ui.theme.PlanetRoseLight
+import com.example.ui.theme.PlanetSkyGlow
+import com.example.ui.theme.PlanetSpacing
 import com.example.ui.theme.PlanetSurface
 import com.example.ui.theme.PlanetTextMuted
+import com.example.ui.theme.PlanetTextPrimary
 import com.example.ui.theme.PlanetTextSecondary
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,27 +70,28 @@ fun AudienceBreakdownDialog(
     allScreenings: List<Screening>,
     totalAudience: Int,
     isLiveDataSource: Boolean,
-    occupancyResult: com.example.data.model.OccupancyResult = com.example.data.model.OccupancyResult(),
+    occupancyResult: OccupancyResult = OccupancyResult(),
     lastUpdatedLabel: String = "",
     onDismiss: () -> Unit
 ) {
-    val liveScreenings = com.example.data.model.deduplicateScreenings(allScreenings)
-        .filter { it.status == ScreeningStatus.LIVE }
+    val liveScreenings = remember(allScreenings) {
+        deduplicateScreenings(allScreenings).filter { it.status == ScreeningStatus.LIVE }
+    }
 
     BasicAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(PlanetRadius.xl))
             .background(PlanetSurface)
-            .border(1.dp, PlanetBorder, RoundedCornerShape(20.dp))
+            .border(1.dp, PlanetBorder, RoundedCornerShape(PlanetRadius.xl))
             .testTag("audience_breakdown_dialog")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(PlanetSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(PlanetSpacing.md)
         ) {
             // Header
             Row(
@@ -82,7 +99,10 @@ fun AudienceBreakdownDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -93,18 +113,20 @@ fun AudienceBreakdownDialog(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 17.sp
                             ),
-                            color = Color.White
+                            color = PlanetTextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Icon(
-                            imageVector = Icons.Filled.CheckCircle,
+                            imageVector = if (occupancyResult.isComplete) Icons.Filled.CheckCircle else Icons.Filled.WarningAmber,
                             contentDescription = "סטטוס נתונים",
-                            tint = if (occupancyResult.isComplete) PlanetEmeraldLight else com.example.ui.theme.PlanetAmber,
+                            tint = if (occupancyResult.isComplete) PlanetEmeraldLight else PlanetAmber,
                             modifier = Modifier.size(16.dp)
                         )
                     }
 
                     val subHeader = buildString {
-                        append(if (isLiveDataSource) "אומדן לפי זמינות מושבים ולוח הקרנות" else "נתוני דוגמה (אין חיבור)")
+                        append(if (isLiveDataSource) "נתוני אמת מהקופות" else "נתוני דוגמה (לא מקוון)")
                         if (lastUpdatedLabel.isNotBlank() && lastUpdatedLabel != "טרם עודכן") {
                             append(" • עודכן $lastUpdatedLabel")
                         }
@@ -112,13 +134,17 @@ fun AudienceBreakdownDialog(
                     Text(
                         text = subHeader,
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = if (isLiveDataSource) PlanetEmeraldLight else PlanetTextMuted
+                        color = if (isLiveDataSource) PlanetEmeraldLight else PlanetAmber,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
@@ -128,66 +154,65 @@ fun AudienceBreakdownDialog(
                 }
             }
 
-            // Summary pill
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(PlanetCardBg)
-                    .border(1.dp, PlanetBorder.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    .padding(12.dp)
+            // Summary Card
+            DashboardCard(
+                gradientColors = listOf(PlanetNavy, PlanetCardBg),
+                borderColor = PlanetBorder,
+                contentPadding = PaddingValues(PlanetSpacing.md)
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(PlanetSpacing.sm)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "סה\"כ מושבים תפוסים פעילים",
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                text = "סה\"כ צופים פעילים",
+                                style = MaterialTheme.typography.labelMedium,
                                 color = PlanetTextSecondary
                             )
                             Text(
                                 text = if (occupancyResult.unknownOccupancy) "לא ידוע" else "$totalAudience צופים",
-                                style = MaterialTheme.typography.titleLarge.copy(
+                                style = MaterialTheme.typography.displaySmall.copy(
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 22.sp
+                                    fontSize = 24.sp
                                 ),
                                 color = PlanetRoseLight
                             )
                         }
 
-                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(PlanetRose.copy(alpha = 0.15f))
-                                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                            ) {
-                                Text(
-                                    text = "${liveScreenings.size} אולמות מקרינים • ${occupancyResult.completenessPercentage}% שלמות",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp
-                                    ),
-                                    color = PlanetRoseLight
-                                )
-                            }
-                            Text(
-                                text = "מאומתים: ${occupancyResult.verifiedOccupiedSeats} • אומדן יחס: ${occupancyResult.estimatedOccupiedSeats}",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                color = PlanetTextSecondary
-                            )
-                        }
+                        StatusPill(
+                            text = "${liveScreenings.size} אולמות • ${occupancyResult.completenessPercentage}%",
+                            textColor = PlanetRoseLight,
+                            containerColor = PlanetRoseGlow,
+                            borderColor = PlanetRose.copy(alpha = 0.4f)
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(PlanetSpacing.xs)
+                    ) {
+                        StatusPill(
+                            text = "מאומתים: ${occupancyResult.verifiedOccupiedSeats}",
+                            textColor = PlanetEmeraldLight,
+                            containerColor = PlanetEmeraldGlow,
+                            leadingIcon = Icons.Filled.CheckCircle
+                        )
+                        StatusPill(
+                            text = "אומדן יחס: ${occupancyResult.estimatedOccupiedSeats}",
+                            textColor = PlanetImaxSkyLight,
+                            containerColor = PlanetSkyGlow,
+                            leadingIcon = Icons.Filled.QueryStats
+                        )
                     }
 
                     if (occupancyResult.activeScreenings > 0 && !occupancyResult.isComplete) {
                         Text(
-                            text = "חושבו ${occupancyResult.countedScreenings}/${occupancyResult.activeScreenings} | חסר PID: ${occupancyResult.missingPresentationIdScreenings} | לא מאומת: ${occupancyResult.unverifiedSeatStatusScreenings} | נכשלו: ${occupancyResult.failedScreenings}",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = com.example.ui.theme.PlanetGold
+                            text = "נספרו ${occupancyResult.countedScreenings}/${occupancyResult.activeScreenings} | חסר PID: ${occupancyResult.missingPresentationIdScreenings} | לא מאומת: ${occupancyResult.unverifiedSeatStatusScreenings} | נכשלו: ${occupancyResult.failedScreenings}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = PlanetGold
                         )
                     }
                 }
@@ -197,31 +222,32 @@ fun AudienceBreakdownDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(com.example.ui.theme.PlanetAmberGlow)
-                        .border(1.dp, com.example.ui.theme.PlanetAmber.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
-                        .padding(10.dp)
+                        .clip(RoundedCornerShape(PlanetRadius.sm))
+                        .background(PlanetAmberGlow)
+                        .border(1.dp, PlanetAmber.copy(alpha = 0.4f), RoundedCornerShape(PlanetRadius.sm))
+                        .padding(PlanetSpacing.sm)
                 ) {
                     Text(
-                        text = "חלקי: קיימות הקרנות פעילות ללא נתוני מושבים מאומתים (${occupancyResult.missingScreenings} חסרות, ${occupancyResult.failedScreenings} נכשלו). הקרנות אלו מסומנות כ'?' ואינן נספרות באפס שקרי.",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 14.sp),
-                        color = com.example.ui.theme.PlanetGold
+                        text = "חלקי: קיימות הקרנות פעילות ללא נתוני מושבים מאומתים (${occupancyResult.missingScreenings} חסרות, ${occupancyResult.failedScreenings} נכשלו). הקרנות אלו מסומנות כ-'?' ואינן נספרות באפס שקרי.",
+                        style = MaterialTheme.typography.labelSmall.copy(lineHeight = 15.sp),
+                        color = PlanetGold
                     )
                 }
             }
 
-            // List of active halls
             Text(
-                text = "אולמות פעילים ברגע זה:",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = Color.White
+                text = "אולמות פעילים ברגע זה",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                color = PlanetTextPrimary
             )
 
             if (liveScreenings.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp),
+                        .clip(RoundedCornerShape(PlanetRadius.md))
+                        .background(PlanetDarkBg.copy(alpha = 0.65f))
+                        .padding(vertical = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -234,8 +260,8 @@ fun AudienceBreakdownDialog(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(260.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .heightIn(max = 260.dp),
+                    verticalArrangement = Arrangement.spacedBy(PlanetSpacing.sm)
                 ) {
                     items(liveScreenings, key = { it.id }) { screening ->
                         ActiveRoomRow(screening = screening)
@@ -243,9 +269,8 @@ fun AudienceBreakdownDialog(
                 }
             }
 
-            // Honest explanation
             Text(
-                text = "מפריד בין מושבים מאומתים ממפת המושבים החיה (תפוסים + שמורים) לבין אומדני יחס קיבולת. נתונים מסומנים אינם סריקת כרטיס בפועל בשער.",
+                text = "האפליקציה מפרידה בין מושבים מאומתים ממפת המושבים החיה (תפוסים + שמורים) לבין אומדני יחס קיבולת שמישה.",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 14.sp),
                 color = PlanetTextMuted
             )
@@ -255,109 +280,103 @@ fun AudienceBreakdownDialog(
 
 @Composable
 private fun ActiveRoomRow(screening: Screening) {
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(PlanetCardBg.copy(alpha = 0.7f))
-            .border(1.dp, PlanetBorder.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-            .padding(10.dp)
+            .clip(RoundedCornerShape(PlanetRadius.md))
+            .background(PlanetCardBg.copy(alpha = 0.72f))
+            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(PlanetRadius.md))
+            .padding(PlanetSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(PlanetSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(PlanetRoseLight)
+        )
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.weight(1f)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(PlanetRoseLight)
-                )
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = RoomType.formatRoomLabel(screening.room),
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            ),
-                            color = Color.White
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(screening.roomType.containerColor)
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = screening.roomType.label,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-                                color = screening.roomType.badgeColor
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "${screening.title} • ${screening.startStr}-${screening.endStr}",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = PlanetTextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    val origCap = screening.originalHallCapacity()
-                    val broken = screening.brokenSeatsCount()
-                    val usable = screening.usableHallCapacity()
-                    val diagNote = buildString {
-                        append(screening.presentationId?.let { "PID: $it" } ?: "ללא PID")
-                        append(" • מקור ${origCap ?: "?"} | תקולים ${broken ?: "לא ידוע"} | שמיש ${usable ?: "לא ידוע"}")
-                        screening.seatApiHttpCode?.let { append(" • HTTP $it") }
-                        screening.seatSummary?.let { s ->
-                            append(" • מאומת ${s.totalValidSeats}/לא ידוע ${s.unknownSeats}")
-                        }
-                    }
-                    Text(
-                        text = diagNote,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = PlanetTextMuted,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            val occupied = screening.estimatedOccupiedSeats()
-            val kind = screening.occupancyCountKind()
-            Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = if (occupied != null) "$occupied צופים" else "? צופים",
+                    text = RoomType.formatRoomLabel(screening.room),
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        fontSize = 12.sp
                     ),
-                    color = if (occupied != null) PlanetRoseLight else PlanetTextMuted
+                    color = PlanetTextPrimary
                 )
-                val subStatus = if (occupied != null) {
-                    "${screening.occupancyPercentage}% • ${kind.hebrewLabel}"
-                } else {
-                    screening.seatFetchState.hebrewLabel
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(screening.roomType.containerColor)
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = screening.roomType.label,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
+                        color = screening.roomType.badgeColor
+                    )
                 }
-                Text(
-                    text = subStatus,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                    color = if (occupied != null) screening.crowdLevel.color else com.example.ui.theme.PlanetAmber
-                )
             }
+
+            Text(
+                text = "${screening.title} • ${screening.startStr}-${screening.endStr}",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                color = PlanetTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            val origCap = screening.originalHallCapacity()
+            val broken = screening.brokenSeatsCount()
+            val usable = screening.usableHallCapacity()
+            val diagNote = buildString {
+                append(screening.presentationId?.let { "PID: $it" } ?: "ללא PID")
+                append(" • מקור ${origCap ?: "?"} | תקולים ${broken ?: "לא ידוע"} | שמיש ${usable ?: "לא ידוע"}")
+                screening.seatApiHttpCode?.let { append(" • HTTP $it") }
+                screening.seatSummary?.let { s ->
+                    append(" • מאומת ${s.totalValidSeats}/לא ידוע ${s.unknownSeats}")
+                }
+            }
+            Text(
+                text = diagNote,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = PlanetTextMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        val occupied = screening.estimatedOccupiedSeats()
+        val kind = screening.occupancyCountKind()
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = if (occupied != null) "$occupied צופים" else "? צופים",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    fontFeatureSettings = "tnum"
+                ),
+                color = if (occupied != null) PlanetRoseLight else PlanetTextMuted
+            )
+            val subStatus = if (occupied != null) {
+                "${screening.occupancyPercentage}% • ${kind.hebrewLabel}"
+            } else {
+                screening.seatFetchState.hebrewLabel
+            }
+            Text(
+                text = subStatus,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = if (occupied != null) screening.crowdLevel.color else PlanetAmber
+            )
         }
     }
 }

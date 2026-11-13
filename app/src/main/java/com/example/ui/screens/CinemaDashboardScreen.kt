@@ -1,30 +1,36 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -41,15 +47,15 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,7 +65,9 @@ import com.example.data.repository.CinemaRepository
 import com.example.ui.components.AudienceBreakdownDialog
 import com.example.ui.components.CinemaHeader
 import com.example.ui.components.CinemaNavigationBar
+import com.example.ui.components.CinemaNavigationRail
 import com.example.ui.components.DailyStatsView
+import com.example.ui.components.DashboardCard
 import com.example.ui.components.FilterControlBar
 import com.example.ui.components.HallsStatusGrid
 import com.example.ui.components.KpiCardsSection
@@ -67,17 +75,20 @@ import com.example.ui.components.MovieCarousel
 import com.example.ui.components.ScreeningDetailSheet
 import com.example.ui.components.ScreeningTicketCard
 import com.example.ui.components.TimelineView
-import com.example.ui.theme.PlanetBorder
 import com.example.ui.theme.PlanetBorderSubtle
 import com.example.ui.theme.PlanetCardBg
 import com.example.ui.theme.PlanetDarkBg
+import com.example.ui.theme.PlanetMotion
+import com.example.ui.theme.PlanetRadius
 import com.example.ui.theme.PlanetRose
+import com.example.ui.theme.PlanetRoseGlow
 import com.example.ui.theme.PlanetRoseLight
-import com.example.ui.theme.PlanetSurface
+import com.example.ui.theme.PlanetSpacing
 import com.example.ui.theme.PlanetTextMuted
+import com.example.ui.theme.PlanetTextPrimary
 import com.example.ui.theme.PlanetTextSecondary
+import com.example.ui.theme.rememberReducedMotion
 import com.example.ui.viewmodel.CinemaViewModel
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,239 +98,285 @@ fun CinemaDashboardScreen(
     cinemaRepository: CinemaRepository = remember { CinemaRepository() },
     modifier: Modifier = Modifier
 ) {
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
     var showAudienceDialog by remember { mutableStateOf(false) }
+    val reducedMotion = rememberReducedMotion()
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Scaffold(
-            contentWindowInsets = WindowInsets.safeDrawing,
-            containerColor = PlanetDarkBg,
-            topBar = {
-                // Unified compact app bar: Sleek header + Segmented navigation tabs
-                Column(modifier = Modifier.fillMaxWidth()) {
+        BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+            val useNavigationRail = maxWidth >= 840.dp
+
+            Scaffold(
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                containerColor = PlanetDarkBg,
+                topBar = {
                     CinemaHeader(
-                        currentTime = uiState.currentIsraelTime,
-                        dataSourceLabel = uiState.dataSourceLabel,
                         isLive = uiState.isLiveDataSource,
                         isRefreshing = uiState.isRefreshing,
+                        seatMapUpdateInProgress = uiState.seatMapUpdateInProgress,
+                        dataFreshnessLabel = uiState.dataFreshnessLabel,
+                        lastSuccessfulUpdateLabel = uiState.lastSuccessfulUpdateLabel,
                         onRefresh = { viewModel.loadData(isUserInitiated = true) }
                     )
+                },
+                bottomBar = {
+                    if (!useNavigationRail) {
+                        CinemaNavigationBar(
+                            activeTab = uiState.activeTab,
+                            onTabSelected = { tab -> viewModel.setActiveTab(tab) }
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            ) { paddingValues ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                ) {
+                    if (useNavigationRail) {
+                        CinemaNavigationRail(
+                            activeTab = uiState.activeTab,
+                            onTabSelected = { tab -> viewModel.setActiveTab(tab) }
+                        )
+                    }
 
-                    CinemaNavigationBar(
-                        activeTab = uiState.activeTab,
-                        onTabSelected = { tab ->
-                            viewModel.setActiveTab(tab)
-                            coroutineScope.launch { listState.scrollToItem(0) }
-                        }
-                    )
-                }
-            },
-            modifier = modifier.fillMaxSize()
-        ) { paddingValues ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                if (uiState.isLoading) {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.TopCenter
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                color = PlanetRose,
-                                modifier = Modifier.size(38.dp)
-                            )
-                            Text(
-                                text = "טוען לוח הקרנות ונתוני אולמות…",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = PlanetTextSecondary
-                            )
-                        }
-                    }
-                } else {
-                    // Natural, smooth scroll container with no nested scroll traps
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = 12.dp,
-                            end = 12.dp,
-                            top = 10.dp,
-                            bottom = 28.dp
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Section: Operational KPIs (Scrolls away naturally)
-                        item(key = "kpi_section") {
-                            KpiCardsSection(
-                                kpiStats = uiState.kpiStats,
-                                cinemaRepository = cinemaRepository,
-                                isLiveDataSource = uiState.isLiveDataSource,
-                                lastUpdatedLabel = uiState.lastSuccessfulUpdateLabel,
-                                dataFreshnessLabel = uiState.dataFreshnessLabel,
-                                onInsideAudienceClick = { showAudienceDialog = true }
-                            )
-                        }
-
-                        when (uiState.activeTab) {
-                            CinemaTab.SCHEDULE -> {
-                                // Movie Strip Carousel
-                                if (uiState.movieSummaries.isNotEmpty()) {
-                                    item(key = "movie_carousel") {
-                                        MovieCarousel(
-                                            movies = uiState.movieSummaries,
-                                            selectedMovieTitle = uiState.selectedMovieTitle,
-                                            onMovieClick = { viewModel.toggleMovieSelection(it) }
-                                        )
+                        if (uiState.isLoading) {
+                            LoadingDashboardState(modifier = Modifier.fillMaxSize())
+                        } else {
+                            AnimatedContent(
+                                targetState = uiState.activeTab,
+                                transitionSpec = {
+                                    if (reducedMotion) {
+                                        fadeIn(PlanetMotion.standardTween(0, true)) togetherWith
+                                            fadeOut(PlanetMotion.standardTween(0, true))
+                                    } else {
+                                        val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                                        (fadeIn(PlanetMotion.standardTween(PlanetMotion.mediumMs)) +
+                                            slideInHorizontally(PlanetMotion.standardTween(PlanetMotion.mediumMs)) {
+                                                direction * (it / 10)
+                                            }) togetherWith
+                                            (fadeOut(PlanetMotion.standardTween(PlanetMotion.fastMs)) +
+                                                slideOutHorizontally(PlanetMotion.standardTween(PlanetMotion.fastMs)) {
+                                                    -direction * (it / 10)
+                                                })
                                     }
-                                }
-
-                                // Search & Filter Controls
-                                item(key = "filter_controls") {
-                                    FilterControlBar(
-                                        searchQuery = uiState.searchQuery,
-                                        onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                                        activeFilter = uiState.filterType,
-                                        onFilterChange = { viewModel.setFilterType(it) },
-                                        countsByType = uiState.countsByType,
-                                        sortBy = uiState.sortBy,
-                                        onSortChange = { viewModel.setSortOption(it) },
-                                        showEnded = uiState.showEnded,
-                                        onShowEndedChange = { viewModel.toggleShowEnded(it) }
-                                    )
-                                }
-
-                                // Active Filter Banner (if movie or query is selected)
-                                if (uiState.selectedMovieTitle != null || uiState.searchQuery.isNotEmpty()) {
-                                    item(key = "active_filter_banner") {
-                                        ActiveFilterBanner(
-                                            title = uiState.selectedMovieTitle ?: uiState.searchQuery,
-                                            resultCount = uiState.filteredScreenings.size,
-                                            onClear = {
-                                                if (uiState.selectedMovieTitle != null) {
-                                                    viewModel.toggleMovieSelection(uiState.selectedMovieTitle)
-                                                }
-                                                if (uiState.searchQuery.isNotEmpty()) {
-                                                    viewModel.setSearchQuery("")
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-
-                                // Screening Ticket Cards or Empty View
-                                if (uiState.filteredScreenings.isEmpty()) {
-                                    item(key = "empty_screenings") {
-                                        EmptyScreeningsState(
-                                            onReset = {
-                                                viewModel.setFilterType("ALL")
-                                                viewModel.setSearchQuery("")
-                                                if (uiState.selectedMovieTitle != null) {
-                                                    viewModel.toggleMovieSelection(uiState.selectedMovieTitle)
-                                                }
-                                                viewModel.toggleShowEnded(true)
-                                            }
-                                        )
-                                    }
-                                } else {
-                                    items(
-                                        items = uiState.filteredScreenings,
-                                        key = { it.id }
-                                    ) { screening ->
-                                        ScreeningTicketCard(
-                                            screening = screening,
-                                            currentCinemaMinutes = uiState.currentCinemaMinutes,
+                                },
+                                label = "tab_content_transition",
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .widthIn(max = 900.dp)
+                                    .fillMaxWidth()
+                            ) { activeTab ->
+                                val tabListState = rememberLazyListState()
+                                LazyColumn(
+                                    state = tabListState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(
+                                        start = PlanetSpacing.md,
+                                        end = PlanetSpacing.md,
+                                        top = PlanetSpacing.md,
+                                        bottom = PlanetSpacing.xxl
+                                    ),
+                                    verticalArrangement = Arrangement.spacedBy(PlanetSpacing.md)
+                                ) {
+                                    item(key = "kpi_section") {
+                                        KpiCardsSection(
+                                            kpiStats = uiState.kpiStats,
                                             cinemaRepository = cinemaRepository,
-                                            onClick = { viewModel.selectScreening(screening) }
+                                            isLiveDataSource = uiState.isLiveDataSource,
+                                            lastUpdatedLabel = uiState.lastSuccessfulUpdateLabel,
+                                            dataFreshnessLabel = uiState.dataFreshnessLabel,
+                                            onInsideAudienceClick = { showAudienceDialog = true }
                                         )
+                                    }
+
+                                    when (activeTab) {
+                                        CinemaTab.SCHEDULE -> {
+                                            if (uiState.movieSummaries.isNotEmpty()) {
+                                                item(key = "movie_carousel") {
+                                                    MovieCarousel(
+                                                        movies = uiState.movieSummaries,
+                                                        selectedMovieTitle = uiState.selectedMovieTitle,
+                                                        onMovieClick = { viewModel.toggleMovieSelection(it) }
+                                                    )
+                                                }
+                                            }
+
+                                            item(key = "filter_controls") {
+                                                FilterControlBar(
+                                                    searchQuery = uiState.searchQuery,
+                                                    onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                                                    activeFilter = uiState.filterType,
+                                                    onFilterChange = { viewModel.setFilterType(it) },
+                                                    countsByType = uiState.countsByType,
+                                                    sortBy = uiState.sortBy,
+                                                    onSortChange = { viewModel.setSortOption(it) },
+                                                    showEnded = uiState.showEnded,
+                                                    onShowEndedChange = { viewModel.toggleShowEnded(it) }
+                                                )
+                                            }
+
+                                            item(key = "active_filter_banner") {
+                                                androidx.compose.animation.AnimatedVisibility(
+                                                    visible = uiState.selectedMovieTitle != null || uiState.searchQuery.isNotEmpty(),
+                                                    enter = expandVertically(PlanetMotion.standardTween(PlanetMotion.fastMs, reducedMotion)) +
+                                                        fadeIn(PlanetMotion.standardTween(PlanetMotion.fastMs, reducedMotion)),
+                                                    exit = shrinkVertically(PlanetMotion.standardTween(PlanetMotion.fastMs, reducedMotion)) +
+                                                        fadeOut(PlanetMotion.standardTween(PlanetMotion.fastMs, reducedMotion))
+                                                ) {
+                                                    ActiveFilterBanner(
+                                                        title = uiState.selectedMovieTitle ?: uiState.searchQuery,
+                                                        resultCount = uiState.filteredScreenings.size,
+                                                        onClear = {
+                                                            if (uiState.selectedMovieTitle != null) {
+                                                                viewModel.toggleMovieSelection(uiState.selectedMovieTitle)
+                                                            }
+                                                            if (uiState.searchQuery.isNotEmpty()) {
+                                                                viewModel.setSearchQuery("")
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            }
+
+                                            if (uiState.filteredScreenings.isEmpty()) {
+                                                item(key = "empty_screenings") {
+                                                    EmptyScreeningsState(
+                                                        onReset = {
+                                                            viewModel.setFilterType("ALL")
+                                                            viewModel.setSearchQuery("")
+                                                            if (uiState.selectedMovieTitle != null) {
+                                                                viewModel.toggleMovieSelection(uiState.selectedMovieTitle)
+                                                            }
+                                                            viewModel.toggleShowEnded(true)
+                                                        }
+                                                    )
+                                                }
+                                            } else {
+                                                items(
+                                                    items = uiState.filteredScreenings,
+                                                    key = { it.id }
+                                                ) { screening ->
+                                                    ScreeningTicketCard(
+                                                        screening = screening,
+                                                        currentCinemaMinutes = uiState.currentCinemaMinutes,
+                                                        cinemaRepository = cinemaRepository,
+                                                        onClick = { viewModel.selectScreening(screening) },
+                                                        modifier = Modifier.animateItem()
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        CinemaTab.TIMELINE -> {
+                                            item(key = "timeline_content") {
+                                                TimelineView(
+                                                    events = uiState.timelineEvents,
+                                                    currentCinemaMinutes = uiState.currentCinemaMinutes,
+                                                    cinemaRepository = cinemaRepository,
+                                                    onScreeningClick = { viewModel.selectScreening(it) }
+                                                )
+                                            }
+                                        }
+
+                                        CinemaTab.HALLS_MAP -> {
+                                            item(key = "halls_grid_content") {
+                                                HallsStatusGrid(
+                                                    allScreenings = uiState.allScreenings,
+                                                    currentCinemaMinutes = uiState.currentCinemaMinutes,
+                                                    cinemaRepository = cinemaRepository,
+                                                    onScreeningClick = { viewModel.selectScreening(it) }
+                                                )
+                                            }
+                                        }
+
+                                        CinemaTab.DAILY_STATS -> {
+                                            item(key = "daily_stats_content") {
+                                                DailyStatsView(
+                                                    dailyStats = uiState.dailyStats,
+                                                    availableDates = uiState.availableHistoryDates,
+                                                    selectedDate = uiState.selectedHistoryDate,
+                                                    lastSuccessfulUpdateLabel = uiState.lastSuccessfulUpdateLabel,
+                                                    dataFreshnessLabel = uiState.dataFreshnessLabel,
+                                                    isLiveDataSource = uiState.isLiveDataSource,
+                                                    hasUnverifiedSeatStatuses = uiState.hasUnverifiedSeatStatuses,
+                                                    occupancyResult = uiState.kpiStats.occupancyResult,
+                                                    quickBookStatus = uiState.quickBookStatus,
+                                                    validationSnapshot = uiState.latestValidationSnapshot,
+                                                    validationJsonPath = uiState.latestValidationJsonPath,
+                                                    onSelectDate = { viewModel.selectHistoryDate(it) }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    item(key = "footer") {
+                                        CinemaFooter(dataSourceLabel = uiState.dataSourceLabel)
                                     }
                                 }
                             }
-
-                            CinemaTab.TIMELINE -> {
-                                item(key = "timeline_content") {
-                                    TimelineView(
-                                        events = uiState.timelineEvents,
-                                        currentCinemaMinutes = uiState.currentCinemaMinutes,
-                                        cinemaRepository = cinemaRepository,
-                                        onScreeningClick = { viewModel.selectScreening(it) }
-                                    )
-                                }
-                            }
-
-                            CinemaTab.HALLS_MAP -> {
-                                item(key = "halls_grid_content") {
-                                    HallsStatusGrid(
-                                        allScreenings = uiState.allScreenings,
-                                        currentCinemaMinutes = uiState.currentCinemaMinutes,
-                                        cinemaRepository = cinemaRepository,
-                                        onScreeningClick = { viewModel.selectScreening(it) }
-                                    )
-                                }
-                            }
-
-                            CinemaTab.DAILY_STATS -> {
-                                item(key = "daily_stats_content") {
-                                    DailyStatsView(
-                                        dailyStats = uiState.dailyStats,
-                                        availableDates = uiState.availableHistoryDates,
-                                        selectedDate = uiState.selectedHistoryDate,
-                                        lastSuccessfulUpdateLabel = uiState.lastSuccessfulUpdateLabel,
-                                        dataFreshnessLabel = uiState.dataFreshnessLabel,
-                                        isLiveDataSource = uiState.isLiveDataSource,
-                                        hasUnverifiedSeatStatuses = uiState.hasUnverifiedSeatStatuses,
-                                        occupancyResult = uiState.kpiStats.occupancyResult,
-                                        quickBookStatus = uiState.quickBookStatus,
-                                        validationSnapshot = uiState.latestValidationSnapshot,
-                                        validationJsonPath = uiState.latestValidationJsonPath,
-                                        onSelectDate = { viewModel.selectHistoryDate(it) }
-                                    )
-                                }
-                            }
                         }
 
-                        // Footer Note
-                        item(key = "footer") {
-                            CinemaFooter(dataSourceLabel = uiState.dataSourceLabel)
+                        uiState.selectedScreening?.let { screening ->
+                            ScreeningDetailSheet(
+                                screening = screening,
+                                currentCinemaMinutes = uiState.currentCinemaMinutes,
+                                cinemaRepository = cinemaRepository,
+                                sheetState = sheetState,
+                                onDismiss = { viewModel.selectScreening(null) },
+                                onFilterByMovie = { movieTitle ->
+                                    viewModel.setActiveTab(CinemaTab.SCHEDULE)
+                                    viewModel.toggleMovieSelection(movieTitle)
+                                }
+                            )
+                        }
+
+                        if (showAudienceDialog) {
+                            AudienceBreakdownDialog(
+                                allScreenings = uiState.allScreenings,
+                                totalAudience = uiState.kpiStats.peopleInside,
+                                isLiveDataSource = uiState.isLiveDataSource,
+                                occupancyResult = uiState.kpiStats.occupancyResult,
+                                lastUpdatedLabel = uiState.lastSuccessfulUpdateLabel,
+                                onDismiss = { showAudienceDialog = false }
+                            )
                         }
                     }
-                }
-
-                // Bottom Sheet Modal for Screening details
-                uiState.selectedScreening?.let { screening ->
-                    ScreeningDetailSheet(
-                        screening = screening,
-                        currentCinemaMinutes = uiState.currentCinemaMinutes,
-                        cinemaRepository = cinemaRepository,
-                        sheetState = sheetState,
-                        onDismiss = { viewModel.selectScreening(null) },
-                        onFilterByMovie = { movieTitle ->
-                            viewModel.setActiveTab(CinemaTab.SCHEDULE)
-                            viewModel.toggleMovieSelection(movieTitle)
-                        }
-                    )
-                }
-
-                // Audience Real Data Breakdown Dialog
-                if (showAudienceDialog) {
-                    AudienceBreakdownDialog(
-                        allScreenings = uiState.allScreenings,
-                        totalAudience = uiState.kpiStats.peopleInside,
-                        isLiveDataSource = uiState.isLiveDataSource,
-                        occupancyResult = uiState.kpiStats.occupancyResult,
-                        lastUpdatedLabel = uiState.lastSuccessfulUpdateLabel,
-                        onDismiss = { showAudienceDialog = false }
-                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LoadingDashboardState(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(PlanetSpacing.md),
+            modifier = Modifier.padding(PlanetSpacing.xxl)
+        ) {
+            CircularProgressIndicator(
+                color = PlanetRose,
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(40.dp)
+            )
+            Text(
+                text = "טוען לוח הקרנות ונתוני אולמות…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = PlanetTextSecondary,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -330,51 +387,58 @@ private fun ActiveFilterBanner(
     resultCount: Int,
     onClear: () -> Unit
 ) {
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(PlanetRose.copy(alpha = 0.12f))
-            .border(1.dp, PlanetRose.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .defaultMinSize(minHeight = 48.dp)
+            .clip(RoundedCornerShape(PlanetRadius.md))
+            .background(PlanetRoseGlow)
+            .border(1.dp, PlanetRose.copy(alpha = 0.4f), RoundedCornerShape(PlanetRadius.md))
+            .padding(horizontal = PlanetSpacing.md, vertical = PlanetSpacing.sm),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(PlanetSpacing.xs)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "מסונן לפי: $title",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White
-                )
-                Text(
-                    text = "($resultCount תוצאות)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = PlanetRoseLight
-                )
-            }
+            Text(
+                text = "מסונן לפי: $title",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                color = PlanetTextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            Text(
+                text = "($resultCount תוצאות)",
+                style = MaterialTheme.typography.labelSmall,
+                color = PlanetRoseLight,
+                maxLines = 1
+            )
+        }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable(onClick = onClear)
-            ) {
-                Text(
-                    text = "בטל סינון",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = PlanetRoseLight
-                )
-                Icon(
-                    imageVector = Icons.Filled.Clear,
-                    contentDescription = "בטל סינון",
-                    tint = PlanetRoseLight,
-                    modifier = Modifier.size(14.dp)
-                )
-            }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .defaultMinSize(minHeight = 36.dp)
+                .clip(RoundedCornerShape(PlanetRadius.sm))
+                .clickable(onClick = onClear)
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = "בטל סינון",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = PlanetRoseLight
+            )
+            Icon(
+                imageVector = Icons.Filled.Clear,
+                contentDescription = "בטל סינון",
+                tint = PlanetRoseLight,
+                modifier = Modifier.size(14.dp)
+            )
         }
     }
 }
@@ -383,44 +447,44 @@ private fun ActiveFilterBanner(
 private fun EmptyScreeningsState(
     onReset: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(PlanetSurface)
-            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(16.dp))
-            .padding(32.dp),
-        contentAlignment = Alignment.Center
+    DashboardCard(
+        contentPadding = PaddingValues(PlanetSpacing.xxl),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(PlanetSpacing.sm)
         ) {
             Icon(
                 imageVector = Icons.Filled.MeetingRoom,
                 contentDescription = null,
                 tint = PlanetTextMuted,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(44.dp)
             )
             Text(
                 text = "אין הקרנות מתאימות כרגע",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = Color.White
+                color = PlanetTextPrimary,
+                textAlign = TextAlign.Center
             )
             Text(
                 text = "נסה לשנות את הסינון, מילות החיפוש או לאפשר הצגת הקרנות שהסתיימו.",
                 style = MaterialTheme.typography.bodySmall,
                 color = PlanetTextMuted,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = PlanetSpacing.md)
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(PlanetSpacing.xs))
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .defaultMinSize(minHeight = 48.dp)
+                    .clip(RoundedCornerShape(PlanetRadius.md))
                     .background(PlanetCardBg)
-                    .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(8.dp))
+                    .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(PlanetRadius.md))
                     .clickable(onClick = onReset)
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .padding(horizontal = PlanetSpacing.lg, vertical = PlanetSpacing.sm),
+                contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "אפס את כל הסינונים",
@@ -439,19 +503,21 @@ private fun CinemaFooter(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp, bottom = 12.dp),
+            .padding(top = PlanetSpacing.sm, bottom = PlanetSpacing.md),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Text(
-            text = "הנתונים מתרעננים אוטומטית • נתוני אמת מקופות Planet",
+            text = "הנתונים מתרעננים אוטומטית • $dataSourceLabel",
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-            color = PlanetTextMuted
+            color = PlanetTextMuted,
+            textAlign = TextAlign.Center
         )
         Text(
             text = "פלאנט ראשון לציון • מערכת ניטור אולמות ועומסי קהל",
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-            color = PlanetTextMuted.copy(alpha = 0.7f)
+            color = PlanetTextMuted.copy(alpha = 0.75f),
+            textAlign = TextAlign.Center
         )
     }
 }

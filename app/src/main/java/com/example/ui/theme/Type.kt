@@ -20,20 +20,23 @@ val Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = SecularOneFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 32.sp,
-        lineHeight = 38.sp
+        fontSize = 36.sp,
+        lineHeight = 42.sp,
+        fontFeatureSettings = "tnum"
     ),
     displayMedium = TextStyle(
         fontFamily = SecularOneFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 24.sp,
-        lineHeight = 30.sp
+        fontSize = 26.sp,
+        lineHeight = 32.sp,
+        fontFeatureSettings = "tnum"
     ),
     displaySmall = TextStyle(
         fontFamily = SecularOneFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
-        lineHeight = 26.sp
+        lineHeight = 26.sp,
+        fontFeatureSettings = "tnum"
     ),
     headlineMedium = TextStyle(
         fontFamily = SecularOneFontFamily,
@@ -52,6 +55,12 @@ val Typography = Typography(
         fontWeight = FontWeight.Bold,
         fontSize = 16.sp,
         lineHeight = 22.sp
+    ),
+    titleSmall = TextStyle(
+        fontFamily = HeeboFontFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
     ),
     bodyLarge = TextStyle(
         fontFamily = HeeboFontFamily,

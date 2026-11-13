@@ -1,33 +1,36 @@
 package com.example.ui.components
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.Timeline
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -37,10 +40,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CinemaTab
 import com.example.ui.theme.PlanetBorderSubtle
-import com.example.ui.theme.PlanetDarkBg
 import com.example.ui.theme.PlanetRose
+import com.example.ui.theme.PlanetRoseLight
+import com.example.ui.theme.PlanetSpacing
 import com.example.ui.theme.PlanetSurfaceGlass
-import com.example.ui.theme.PlanetTextSecondary
+import com.example.ui.theme.PlanetTextMuted
+import com.example.ui.theme.PlanetTextPrimary
+
+private fun tabIcons(tab: CinemaTab, selected: Boolean): ImageVector {
+    return when (tab) {
+        CinemaTab.SCHEDULE -> if (selected) Icons.Filled.CalendarMonth else Icons.Outlined.CalendarMonth
+        CinemaTab.TIMELINE -> if (selected) Icons.Filled.Timeline else Icons.Outlined.Timeline
+        CinemaTab.HALLS_MAP -> if (selected) Icons.Filled.GridView else Icons.Outlined.GridView
+        CinemaTab.DAILY_STATS -> if (selected) Icons.Filled.BarChart else Icons.Outlined.BarChart
+    }
+}
 
 @Composable
 fun CinemaNavigationBar(
@@ -48,81 +62,99 @@ fun CinemaNavigationBar(
     onTabSelected: (CinemaTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(PlanetSurfaceGlass)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(PlanetDarkBg)
-                .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(12.dp))
-                .padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalAlignment = Alignment.CenterVertically
+    Column(modifier = modifier.fillMaxWidth()) {
+        HorizontalDivider(thickness = 1.dp, color = PlanetBorderSubtle)
+        NavigationBar(
+            containerColor = PlanetSurfaceGlass,
+            contentColor = PlanetTextPrimary,
+            tonalElevation = 0.dp,
+            windowInsets = WindowInsets.navigationBars
         ) {
-            CinemaTab.values().forEach { tab ->
+            CinemaTab.entries.forEach { tab ->
                 val isSelected = activeTab == tab
-
-                val icon: ImageVector = when (tab) {
-                    CinemaTab.SCHEDULE -> Icons.Filled.CalendarMonth
-                    CinemaTab.TIMELINE -> Icons.Filled.Timeline
-                    CinemaTab.HALLS_MAP -> Icons.Filled.GridOn
-                    CinemaTab.DAILY_STATS -> Icons.Filled.BarChart
-                }
-
-                val targetBg = if (isSelected) PlanetRose else Color.Transparent
-                val animatedBg by animateColorAsState(
-                    targetValue = targetBg,
-                    animationSpec = tween(250, easing = FastOutSlowInEasing),
-                    label = "tab_bg"
-                )
-
-                val targetContentColor = if (isSelected) Color.White else PlanetTextSecondary
-                val animatedContentColor by animateColorAsState(
-                    targetValue = targetContentColor,
-                    animationSpec = tween(200),
-                    label = "tab_content_color"
-                )
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(animatedBg)
-                        .clickable(onClick = { onTabSelected(tab) })
-                        .testTag("tab_${tab.name}"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    ) {
+                NavigationBarItem(
+                    selected = isSelected,
+                    onClick = { onTabSelected(tab) },
+                    icon = {
                         Icon(
-                            imageVector = icon,
+                            imageVector = tabIcons(tab, isSelected),
                             contentDescription = tab.title,
-                            tint = animatedContentColor,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(22.dp)
                         )
+                    },
+                    label = {
                         Text(
                             text = tab.title,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = 11.sp
                             ),
-                            color = animatedContentColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                    }
-                }
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = PlanetRoseLight,
+                        selectedTextColor = PlanetTextPrimary,
+                        indicatorColor = PlanetRose.copy(alpha = 0.18f),
+                        unselectedIconColor = PlanetTextMuted,
+                        unselectedTextColor = PlanetTextMuted
+                    ),
+                    modifier = Modifier.testTag("tab_${tab.name}")
+                )
             }
         }
+    }
+}
+
+@Composable
+fun CinemaNavigationRail(
+    activeTab: CinemaTab,
+    onTabSelected: (CinemaTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.foundation.layout.Row(modifier = modifier.fillMaxHeight()) {
+        NavigationRail(
+            containerColor = PlanetSurfaceGlass,
+            contentColor = PlanetTextPrimary,
+            windowInsets = WindowInsets(0, 0, 0, 0)
+        ) {
+            Spacer(modifier = Modifier.height(PlanetSpacing.md))
+            CinemaTab.entries.forEach { tab ->
+                val isSelected = activeTab == tab
+                NavigationRailItem(
+                    selected = isSelected,
+                    onClick = { onTabSelected(tab) },
+                    icon = {
+                        Icon(
+                            imageVector = tabIcons(tab, isSelected),
+                            contentDescription = tab.title,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = tab.title,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = PlanetRoseLight,
+                        selectedTextColor = PlanetTextPrimary,
+                        indicatorColor = PlanetRose.copy(alpha = 0.18f),
+                        unselectedIconColor = PlanetTextMuted,
+                        unselectedTextColor = PlanetTextMuted
+                    ),
+                    modifier = Modifier
+                        .padding(vertical = PlanetSpacing.xs)
+                        .testTag("tab_${tab.name}")
+                )
+            }
+        }
+        VerticalDivider(thickness = 1.dp, color = PlanetBorderSubtle)
     }
 }
