@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Context
 import com.example.data.diagnostics.LiveValidationSnapshotBuilder
 import com.example.data.diagnostics.SourceTelemetryBundle
 import com.example.data.local.PlanetDatabase
@@ -25,6 +26,7 @@ import com.example.data.repository.AttendanceHistoryRepository
 import com.example.data.repository.CinemaRepository
 import com.example.data.repository.SeatAvailabilityRepository
 import com.example.data.repository.SeatFetchResult
+import com.example.planetchecker.millisecondsUntilNextQuarterHour
 import com.example.worker.CinemaMonitorWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -76,16 +78,25 @@ class CinemaViewModel private constructor(
     private val hhmmFormatter = DateTimeFormatter.ofPattern("HH:mm")
     private val dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 
+    private val prefs by lazy {
+        getApplication<Application>().getSharedPreferences("planet_checker_prefs", Context.MODE_PRIVATE)
+    }
+
     private var tickerJob: Job? = null
+    private var quarterHourJob: Job? = null
     private var posterJob: Job? = null
     private var seatRefreshJob: Job? = null
+    @Volatile
+    private var isLoadInFlight = false
 
     init {
         val initialCinemaDate = getEffectiveCinemaDate(getCurrentIsraelZonedTime()).toString()
+        val initialPinned = prefs.getStringSet("pinned_screening_keys", emptySet()).orEmpty().toSet()
         _uiState.update {
             it.copy(
                 currentCinemaIsoDate = initialCinemaDate,
-                selectedHistoryDate = initialCinemaDate
+                selectedHistoryDate = initialCinemaDate,
+                pinnedScreeningKeys = initialPinned
             )
         }
         if (scheduleBackgroundWork) {
@@ -134,20 +145,25 @@ class CinemaViewModel private constructor(
     private fun startClockAndPeriodicUpdates() {
         tickerJob?.cancel()
         tickerJob = viewModelScope.launch {
-            var secondCounter = 0
+            var tickCounter = 0
             while (isActive) {
                 updateCurrentTimeAndRecalculate()
-                delay(1000)
-                secondCounter++
-                // Refresh live active seat maps every 5 minutes (only for screenings with presentationId)
-                if (secondCounter % 300 == 0 && secondCounter % 900 != 0) {
+                delay(10_000L) // עדכון שעון ישראל כל 10 שניות
+                tickCounter++
+                // Refresh live active seat maps every 5 minutes (30 * 10s) when not loading
+                if (tickCounter % 30 == 0 && !isLoadInFlight) {
                     refreshActiveSeatsOnly()
                 }
-                // Full schedule & hourly availability refresh every 15 minutes
-                if (secondCounter >= 900) {
-                    secondCounter = 0
-                    loadData(isUserInitiated = false)
-                }
+            }
+        }
+
+        quarterHourJob?.cancel()
+        quarterHourJob = viewModelScope.launch {
+            while (isActive) {
+                val waitMs = millisecondsUntilNextQuarterHour(getCurrentIsraelZonedTime())
+                    .coerceAtLeast(1_000L)
+                delay(waitMs)
+                loadData(isUserInitiated = false)
             }
         }
     }
@@ -231,25 +247,31 @@ class CinemaViewModel private constructor(
     }
 
     fun loadData(isUserInitiated: Boolean = true) {
+        if (isLoadInFlight) return
         viewModelScope.launch {
-            _uiState.update {
-                if (isUserInitiated) it.copy(isRefreshing = true) else it
-            }
+            isLoadInFlight = true
+            try {
+                _uiState.update {
+                    if (isUserInitiated) it.copy(isRefreshing = true) else it
+                }
 
-            val now = getCurrentIsraelZonedTime()
-            val rawMinutes = now.hour * 60 + now.minute
-            val cinemaMinutes = repository.normalizeCinemaMinutes(rawMinutes)
+                val now = getCurrentIsraelZonedTime()
+                val rawMinutes = now.hour * 60 + now.minute
+                val cinemaMinutes = repository.normalizeCinemaMinutes(rawMinutes)
 
-            val result = repository.loadSchedule(cinemaMinutes)
+                val result = repository.loadSchedule(
+                    currentNowMinutes = cinemaMinutes,
+                    previousScreenings = _uiState.value.allScreenings
+                )
 
-            val fetchedAt = result.fetchedAtEpochMs
-            val effectiveUpdatedMs = fetchedAt ?: _uiState.value.lastSuccessfulUpdateEpochMs
-            val (kpis, events) = calculateKpisAndEvents(
-                screenings = result.screenings,
-                now = now,
-                nowMin = cinemaMinutes,
-                lastUpdatedEpochMs = effectiveUpdatedMs
-            )
+                val fetchedAt = result.fetchedAtEpochMs
+                val effectiveUpdatedMs = fetchedAt ?: _uiState.value.lastSuccessfulUpdateEpochMs
+                val (kpis, events) = calculateKpisAndEvents(
+                    screenings = result.screenings,
+                    now = now,
+                    nowMin = cinemaMinutes,
+                    lastUpdatedEpochMs = effectiveUpdatedMs
+                )
             val movieSummaries = generateMovieSummaries(result.screenings)
             val counts = calculateTypeCounts(result.screenings)
             val lastUpdateFormatted = fetchedAt?.let {
@@ -316,7 +338,11 @@ class CinemaViewModel private constructor(
                 refreshStatsSnapshotOnce()
             }
 
-            fetchPostersInBackground(result.screenings)
+                fetchPostersInBackground(result.screenings)
+            } finally {
+                isLoadInFlight = false
+                _uiState.update { it.copy(isRefreshing = false, isLoading = false) }
+            }
         }
     }
 
@@ -654,13 +680,47 @@ class CinemaViewModel private constructor(
             }
         }
 
-        return when (sortBy) {
+        val pinnedKeys = _uiState.value.pinnedScreeningKeys
+        val sorted = when (sortBy) {
             SortOption.START_TIME -> visible.sortedBy { it.startMin }
             SortOption.END_TIME -> visible.sortedBy { it.endMin }
             SortOption.ROOM -> visible.sortedWith(
                 compareBy<Screening> { it.roomNumber ?: 99 }.thenBy { it.startMin }
             )
             SortOption.CROWD -> visible.sortedByDescending { it.estimatedOccupiedSeats() ?: 0 }
+        }
+        return if (pinnedKeys.isEmpty()) {
+            sorted
+        } else {
+            val pinned = sorted.filter { it.stableKey() in pinnedKeys }
+            val others = sorted.filterNot { it.stableKey() in pinnedKeys }
+            pinned + others
+        }
+    }
+
+    fun togglePinScreening(screening: Screening) {
+        val key = screening.stableKey()
+        val updatedPins = _uiState.value.pinnedScreeningKeys.toMutableSet().apply {
+            if (!add(key)) remove(key)
+        }.toSet()
+        prefs.edit().putStringSet("pinned_screening_keys", updatedPins).apply()
+        _uiState.update { state ->
+            val tempState = state.copy(pinnedScreeningKeys = updatedPins)
+            // Re-sort using updated pins
+            val sorted = when (tempState.sortBy) {
+                SortOption.START_TIME -> tempState.filteredScreenings.sortedBy { it.startMin }
+                SortOption.END_TIME -> tempState.filteredScreenings.sortedBy { it.endMin }
+                SortOption.ROOM -> tempState.filteredScreenings.sortedWith(
+                    compareBy<Screening> { it.roomNumber ?: 99 }.thenBy { it.startMin }
+                )
+                SortOption.CROWD -> tempState.filteredScreenings.sortedByDescending { it.estimatedOccupiedSeats() ?: 0 }
+            }
+            val reordered = if (updatedPins.isEmpty()) {
+                sorted
+            } else {
+                sorted.filter { it.stableKey() in updatedPins } + sorted.filterNot { it.stableKey() in updatedPins }
+            }
+            tempState.copy(filteredScreenings = reordered)
         }
     }
 

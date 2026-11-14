@@ -15,6 +15,10 @@ import com.example.data.model.Screening
 import com.example.data.model.ScreeningStatus
 import com.example.data.model.calculateCinemaOccupancy
 import com.example.data.model.deduplicateScreenings
+import com.example.planetchecker.audienceByRoomType
+import com.example.planetchecker.dailyMovieStats
+import com.example.planetchecker.estimatedAudienceForDate
+import com.example.planetchecker.estimatedAudienceRemainingToday
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import java.time.Instant
@@ -412,6 +416,39 @@ class AttendanceHistoryRepository(
             )
         }
 
+        val realLiveScreenings = if (isToday) {
+            deduplicateScreenings(liveScreenings).filter { it.availabilitySource != AvailabilitySource.SAMPLE_FALLBACK }
+        } else {
+            emptyList()
+        }
+        val coreLiveScreenings = realLiveScreenings.map { it.toCoreScreening() }
+        val targetCinemaDate = realLiveScreenings.firstNotNullOfOrNull { it.date }
+            ?: runCatching { LocalDate.parse(dateIso) }.getOrNull()
+            ?: Screening.resolveIsraelCinemaDayAndMin(now).first
+
+        val computedAudienceToday = if (coreLiveScreenings.isNotEmpty()) {
+            estimatedAudienceForDate(coreLiveScreenings, targetCinemaDate)
+        } else if (totalKnown > 0) {
+            totalAttendanceSum
+        } else {
+            null
+        }
+        val computedRemainingToday = if (coreLiveScreenings.isNotEmpty()) {
+            estimatedAudienceRemainingToday(coreLiveScreenings, now)
+        } else {
+            null
+        }
+        val computedAudienceByFormat = if (coreLiveScreenings.isNotEmpty()) {
+            audienceByRoomType(coreLiveScreenings, targetCinemaDate)
+        } else {
+            emptyList()
+        }
+        val computedMovieStatsToday = if (coreLiveScreenings.isNotEmpty()) {
+            dailyMovieStats(coreLiveScreenings, targetCinemaDate)
+        } else {
+            emptyList()
+        }
+
         return DailyStatisticsSummary(
             date = dateIso,
             isToday = isToday,
@@ -423,7 +460,7 @@ class AttendanceHistoryRepository(
             estimatedCompletedAttendance = if (completedKnown > 0) completedAttendanceSum else null,
             completedWithKnownAttendance = completedKnown,
             completedWithUnknownAttendance = completedUnknown,
-            estimatedTotalAttendanceToday = if (totalKnown > 0) totalAttendanceSum else null,
+            estimatedTotalAttendanceToday = computedAudienceToday,
             totalWithKnownAttendance = totalKnown,
             totalWithUnknownAttendance = totalUnknown,
             totalKnownAvailableSeats = if (anyKnownAvailable) totalAvailableSum else null,
@@ -433,7 +470,10 @@ class AttendanceHistoryRepository(
             unknownCount = unknownCount,
             timelinePoints = timelinePoints,
             monitoringGaps = gapInfos,
-            screeningBreakdowns = breakdowns
+            screeningBreakdowns = breakdowns,
+            estimatedRemainingToday = computedRemainingToday,
+            audienceByFormat = computedAudienceByFormat,
+            movieStatsToday = computedMovieStatsToday
         )
     }
 

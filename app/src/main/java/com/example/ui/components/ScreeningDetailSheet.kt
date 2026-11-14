@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EventSeat
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -78,7 +80,10 @@ fun ScreeningDetailSheet(
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onFilterByMovie: (String) -> Unit,
-    onOpenSeatMap: (Screening) -> Unit = {}
+    onOpenSeatMap: (Screening) -> Unit = {},
+    isPinned: Boolean = false,
+    onTogglePin: (() -> Unit)? = null,
+    nextScreeningInRoom: Screening? = null
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -145,17 +150,35 @@ fun ScreeningDetailSheet(
                     )
                 }
 
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .minimumInteractiveComponentSize()
-                        .size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = "סגור",
-                        tint = PlanetTextSecondary
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onTogglePin != null) {
+                        IconButton(
+                            onClick = onTogglePin,
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .size(48.dp)
+                                .testTag("pin_screening_button")
+                        ) {
+                            Icon(
+                                imageVector = if (isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                contentDescription = if (isPinned) "בטל נעיצה" else "נעץ הקרנה",
+                                tint = if (isPinned) PlanetGold else PlanetTextSecondary
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "סגור",
+                            tint = PlanetTextSecondary
+                        )
+                    }
                 }
             }
 
@@ -485,11 +508,20 @@ fun ScreeningDetailSheet(
                     )
 
                     TimelineStep(
-                        time = cinemaRepository.formatCinemaMinutes(screening.endMin),
+                        time = screening.displayEndTime(),
                         title = "סיום פינוי ופתיחת דלתות לניקיון",
                         desc = "15 דקות תוספת לסיום מוחלט של יציאת הקהל והכשרת האולם להקרנה הבאה.",
                         color = PlanetGold
                     )
+
+                    if (nextScreeningInRoom != null) {
+                        TimelineStep(
+                            time = nextScreeningInRoom.startStr,
+                            title = "הקרנה הבאה באולם: ${nextScreeningInRoom.title}",
+                            desc = "סיום משוער: ${nextScreeningInRoom.displayEndTime()}",
+                            color = PlanetRose
+                        )
+                    }
                 }
             }
 

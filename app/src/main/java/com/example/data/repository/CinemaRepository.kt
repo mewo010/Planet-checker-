@@ -22,6 +22,9 @@ import com.example.data.model.calculateUsableCapacity
 import com.example.data.model.canonicalSlotKey
 import com.example.data.model.deduplicateScreenings
 import com.example.data.model.mergeScreeningAvailability
+import com.example.planetchecker.estimatedOccupiedSeats as coreEstimatedOccupiedSeats
+import com.example.planetchecker.roomCapacity as coreRoomCapacity
+import com.example.planetchecker.roomType as coreRoomType
 import com.example.data.remote.DefaultPlanetQuickBookClient
 import com.example.data.remote.PlanetQuickBookClient
 import com.example.data.remote.QuickBookFetchResult
@@ -47,8 +50,9 @@ class CinemaRepository(
 ) {
 
     companion object {
-        const val FIRST_URL = "https://gist.githubusercontent.com/Gaash14/a12b463cc829c43a7ab0bf8385f1be63/raw/first-schedule.json"
-        const val HOURLY_URL = "https://gist.githubusercontent.com/Gaash14/da630d78754949bce95065eadb9fd370/raw/schedule.json"
+        const val FIRST_URL = com.example.planetchecker.FIRST_SCHEDULE_URL
+        const val HOURLY_URL = com.example.planetchecker.HOURLY_SCHEDULE_URL
+        const val AVAILABILITY_HISTORY_URL = com.example.planetchecker.AVAILABILITY_HISTORY_URL
 
         const val ENTRY_LEAD = 20
         const val EXTRA_END = 15
@@ -182,14 +186,18 @@ class CinemaRepository(
         val recoveredPidsFromQuickBook: Int = 0
     )
 
-    suspend fun loadSchedule(currentNowMinutes: Int): FetchResult = withContext(Dispatchers.IO) {
+    suspend fun loadSchedule(
+        currentNowMinutes: Int,
+        previousScreenings: List<Screening> = emptyList()
+    ): FetchResult = withContext(Dispatchers.IO) {
         val nowZoned = ZonedDateTime.now(jerusalemZone)
         val defaultCinemaDate = Screening.resolveIsraelCinemaDayAndMin(nowZoned).first
+        val cacheBuster = System.currentTimeMillis()
 
         var baseResponse: FirstScheduleResponse? = null
         val (baseJson, baseTelemetryInit) = fetchUrlWithTelemetry(
             sourceName = "FIRST_URL",
-            url = "$FIRST_URL?nocache=${System.currentTimeMillis()}",
+            url = "$FIRST_URL?nocache=$cacheBuster",
             endpointUrl = FIRST_URL,
             ttlMs = 24 * 60 * 60 * 1000L
         )
@@ -208,7 +216,7 @@ class CinemaRepository(
         var hourlyResponse: HourlyScheduleResponse? = null
         val (hourlyJson, hourlyTelemetryInit) = fetchUrlWithTelemetry(
             sourceName = "HOURLY_URL",
-            url = "$HOURLY_URL?nocache=${System.currentTimeMillis()}",
+            url = "$HOURLY_URL?nocache=$cacheBuster",
             endpointUrl = HOURLY_URL,
             ttlMs = 60 * 60 * 1000L
         )
@@ -224,7 +232,24 @@ class CinemaRepository(
             }
         }
 
-        val targetDate = parseDateFlexible(baseResponse?.date) ?: defaultCinemaDate
+        var historyResponse: HourlyScheduleResponse? = null
+        val (historyJson, _) = fetchUrlWithTelemetry(
+            sourceName = "HISTORY_URL",
+            url = "$AVAILABILITY_HISTORY_URL?nocache=$cacheBuster",
+            endpointUrl = AVAILABILITY_HISTORY_URL,
+            ttlMs = 60 * 60 * 1000L
+        )
+        if (historyJson != null) {
+            try {
+                historyResponse = moshi.adapter(HourlyScheduleResponse::class.java).fromJson(historyJson)
+            } catch (_: Exception) {
+                // history.json failure is non-fatal
+            }
+        }
+
+        val targetDate = parseDateFlexible(baseResponse?.date)
+            ?: previousScreenings.firstNotNullOfOrNull { it.date }
+            ?: defaultCinemaDate
         val qbUrl = PlanetQuickBookClient.buildScheduleUrl(targetDate)
         val qbResult = quickBookClient.fetchDailySchedule(targetDate)
         val qbScreenings: List<RawScreening> = when (qbResult) {
@@ -283,22 +308,13 @@ class CinemaRepository(
             seatsApiTtlMs = SeatAvailabilityRepository.DEFAULT_CACHE_TTL_MS
         )
 
-        val mergeResult = mergeAllScheduleSources(
-            baseResponse = baseResponse,
-            hourlyResponse = hourlyResponse,
-            quickBookScreenings = qbScreenings,
-            defaultCinemaDate = defaultCinemaDate,
-            nowMinutes = currentNowMinutes,
-            nowZoned = nowZoned
-        )
-
         val qbStatus = when (qbResult) {
             is QuickBookFetchResult.Success -> QuickBookSourceStatus(
                 stateLabel = "זמין (${qbResult.screenings.size} הקרנות)",
                 httpCode = qbResult.httpCode,
                 totalOfficialEvents = qbResult.screenings.size,
-                recoveredMissingScreenings = mergeResult.recoveredMissingFromQuickBook,
-                recoveredPresentationIds = mergeResult.recoveredPidsFromQuickBook,
+                recoveredMissingScreenings = 0,
+                recoveredPresentationIds = 0,
                 isReachable = true,
                 errorDetail = null
             )
@@ -315,6 +331,54 @@ class CinemaRepository(
                 errorDetail = qbResult.message
             )
         }
+
+        // APK rule: if baseline (first-schedule.json) fails, do NOT touch existing screenings in memory.
+        if (baseResponse == null) {
+            val nonFallbackPrev = previousScreenings.filter { it.availabilitySource != AvailabilitySource.SAMPLE_FALLBACK }
+            if (nonFallbackPrev.isNotEmpty()) {
+                return@withContext FetchResult(
+                    isLive = true,
+                    dateLabel = targetDate.toString(),
+                    cinemaDate = targetDate,
+                    screenings = nonFallbackPrev,
+                    fetchedAtEpochMs = null,
+                    quickBookStatus = qbStatus,
+                    sourceTelemetry = telemetryBundle
+                )
+            }
+            val fallback = deduplicateScreenings(
+                prepareScreenings(
+                    rawList = MOCK_SCREENINGS,
+                    nowMinutes = currentNowMinutes,
+                    defaultDate = defaultCinemaDate,
+                    defaultSource = AvailabilitySource.SAMPLE_FALLBACK,
+                    nowZoned = nowZoned
+                )
+            )
+            return@withContext FetchResult(
+                isLive = false,
+                dateLabel = "נתוני דוגמה (אין חיבור)",
+                cinemaDate = defaultCinemaDate,
+                screenings = fallback,
+                fetchedAtEpochMs = null,
+                quickBookStatus = qbStatus,
+                sourceTelemetry = telemetryBundle
+            )
+        }
+
+        val mergeResult = mergeGistBaselineWithSources(
+            baseResponse = baseResponse,
+            baseJson = baseJson,
+            hourlyResponse = hourlyResponse,
+            hourlyJson = hourlyJson,
+            historyResponse = historyResponse,
+            historyJson = historyJson,
+            previousScreenings = previousScreenings,
+            quickBookScreenings = qbScreenings,
+            defaultCinemaDate = defaultCinemaDate,
+            nowMinutes = currentNowMinutes,
+            nowZoned = nowZoned
+        )
 
         if (mergeResult.screenings.isEmpty()) {
             val fallback = deduplicateScreenings(
@@ -345,12 +409,209 @@ class CinemaRepository(
 
         FetchResult(
             isLive = true,
-            dateLabel = baseResponse?.date ?: mergeResult.cinemaDate.toString(),
+            dateLabel = baseResponse.date ?: mergeResult.cinemaDate.toString(),
             cinemaDate = mergeResult.cinemaDate,
             screenings = mergeResult.screenings,
             fetchedAtEpochMs = fetchedAt,
-            quickBookStatus = qbStatus,
+            quickBookStatus = qbStatus.copy(recoveredPresentationIds = mergeResult.recoveredPidsFromQuickBook),
             sourceTelemetry = telemetryBundle
+        )
+    }
+
+    /**
+     * Extracts exact Double precision availability ratios from raw Gist JSON so precision is never lost to Float.
+     */
+    private fun extractDoubleRatios(rawJson: String?): Pair<Map<String, Double>, Map<String, Double>> {
+        if (rawJson.isNullOrBlank()) return emptyMap<String, Double>() to emptyMap()
+        val byCode = mutableMapOf<String, Double>()
+        val bySlot = mutableMapOf<String, Double>()
+        try {
+            val root = JSONObject(rawJson)
+            val arr = root.optJSONArray("screenings") ?: return byCode to bySlot
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val ratio = o.optDouble("availabilityRatio", Double.NaN)
+                    .takeIf { it.isFinite() && it in 0.0..1.0 } ?: continue
+                val code = o.optString("presentationCode").trim().takeIf { it.isNotEmpty() }
+                if (code != null) byCode[code] = ratio
+                val room = o.optString("room", "")
+                val start = o.optString("start", "")
+                val title = o.optString("title", "")
+                if (room.isNotBlank() && start.isNotBlank() && title.isNotBlank()) {
+                    bySlot[canonicalSlotKey(room, start, title)] = ratio
+                }
+            }
+        } catch (_: Exception) {
+            // Fall back to Moshi floats if raw JSON shape differs
+        }
+        return byCode to bySlot
+    }
+
+    /**
+     * APK source-of-truth Gist merger:
+     * Final screening list = baseline (first-schedule.json).
+     * For each screening with a presentationCode, availabilityRatio resolves by priority:
+     *   1. hourly   (schedule.json)
+     *   2. history  (history.json)
+     *   3. previous (in-memory state prior to refresh)
+     *   4. baseline (first-schedule.json)
+     * Screenings without presentationCode keep their baseline availabilityRatio.
+     */
+    fun mergeGistBaselineWithSources(
+        baseResponse: FirstScheduleResponse,
+        baseJson: String? = null,
+        hourlyResponse: HourlyScheduleResponse? = null,
+        hourlyJson: String? = null,
+        historyResponse: HourlyScheduleResponse? = null,
+        historyJson: String? = null,
+        previousScreenings: List<Screening> = emptyList(),
+        quickBookScreenings: List<RawScreening> = emptyList(),
+        defaultCinemaDate: LocalDate,
+        nowMinutes: Int,
+        nowZoned: ZonedDateTime = ZonedDateTime.now(jerusalemZone)
+    ): ScheduleMergeResult {
+        val parsedHeaderDate = parseDateFlexible(baseResponse.date) ?: defaultCinemaDate
+        val (baseDoubleByCode, baseDoubleBySlot) = extractDoubleRatios(baseJson)
+        val (hourlyDoubleByCode, _) = extractDoubleRatios(hourlyJson)
+        val (historyDoubleByCode, _) = extractDoubleRatios(historyJson)
+
+        val hourlyByCode = linkedMapOf<String, RawScreening>()
+        hourlyResponse?.screenings.orEmpty().forEach { item ->
+            val code = item.presentationCode?.trim()?.takeIf { it.isNotEmpty() }
+            if (code != null) hourlyByCode[code] = item
+        }
+
+        val historyByCode = linkedMapOf<String, RawScreening>()
+        historyResponse?.screenings.orEmpty().forEach { item ->
+            val code = item.presentationCode?.trim()?.takeIf { it.isNotEmpty() }
+            if (code != null) historyByCode[code] = item
+        }
+
+        val prevByCode = linkedMapOf<String, Screening>()
+        previousScreenings.forEach { item ->
+            val code = item.presentationCode?.trim()?.takeIf { it.isNotEmpty() }
+            if (code != null) prevByCode[code] = item
+        }
+
+        val qbBySlotKey = linkedMapOf<String, RawScreening>()
+        val qbByCode = linkedMapOf<String, RawScreening>()
+        quickBookScreenings.forEach { item ->
+            qbBySlotKey[canonicalSlotKey(item.room, item.start, item.title)] = item
+            item.presentationCode?.trim()?.takeIf { it.isNotEmpty() }?.let { qbByCode[it] = item }
+        }
+
+        val basePrepared = prepareScreenings(
+            rawList = baseResponse.screenings,
+            nowMinutes = nowMinutes,
+            defaultDate = parsedHeaderDate,
+            defaultSource = AvailabilitySource.SCHEDULE_FEED,
+            nowZoned = nowZoned,
+            doubleRatiosByCode = baseDoubleByCode,
+            doubleRatiosBySlot = baseDoubleBySlot
+        )
+
+        var recoveredPids = 0
+        val merged = basePrepared.map { s ->
+            val code = s.presentationCode?.trim()?.takeIf { it.isNotEmpty() }
+            val hourlyItem = code?.let { hourlyByCode[it] }
+            val historyItem = code?.let { historyByCode[it] }
+            val prevItem = code?.let { prevByCode[it] }
+
+            val hourlyRatio = code?.let {
+                (hourlyDoubleByCode[it] ?: hourlyItem?.availabilityRatio?.toDouble())
+                    ?.takeIf { r -> r.isFinite() && r in 0.0..1.0 }
+            }
+            val historyRatio = code?.let {
+                (historyDoubleByCode[it] ?: historyItem?.availabilityRatio?.toDouble())
+                    ?.takeIf { r -> r.isFinite() && r in 0.0..1.0 }
+            }
+            val prevRatio = prevItem?.effectiveAvailabilityDouble()
+            val baselineRatio = s.effectiveAvailabilityDouble()
+
+            val chosenRatio: Double?
+            val chosenSource: AvailabilitySource
+            when {
+                hourlyRatio != null -> {
+                    chosenRatio = hourlyRatio
+                    chosenSource = AvailabilitySource.HOURLY_FEED
+                }
+                historyRatio != null -> {
+                    chosenRatio = historyRatio
+                    chosenSource = AvailabilitySource.HISTORY_FEED
+                }
+                prevRatio != null -> {
+                    chosenRatio = prevRatio
+                    chosenSource = prevItem.availabilitySource.takeIf { it != AvailabilitySource.NONE }
+                        ?: AvailabilitySource.SCHEDULE_FEED
+                }
+                else -> {
+                    chosenRatio = baselineRatio
+                    chosenSource = if (baselineRatio != null) AvailabilitySource.SCHEDULE_FEED else AvailabilitySource.NONE
+                }
+            }
+
+            val qbItem = code?.let { qbByCode[it] } ?: qbBySlotKey[s.canonicalSlotKey()]
+            val resolvedPid = s.presentationId
+                ?: hourlyItem?.resolvedPresentationId()
+                ?: prevItem?.presentationId
+                ?: qbItem?.resolvedPresentationId()
+            if (s.presentationId == null && hourlyItem?.resolvedPresentationId() == null && qbItem?.resolvedPresentationId() != null) {
+                recoveredPids++
+            }
+
+            val ratioFloat = chosenRatio?.toFloat()
+            val updatedCore = com.example.planetchecker.Screening(
+                room = s.room,
+                start = s.startStr,
+                end = s.endStr,
+                title = s.title,
+                date = s.date,
+                availabilityRatio = chosenRatio,
+                presentationCode = code
+            )
+            val estPeople = updatedCore.coreEstimatedOccupiedSeats()
+            val occPct = if (chosenRatio != null) ((1.0 - chosenRatio) * 100.0).roundToInt().coerceIn(0, 100) else 0
+
+            val trace = ScreeningSourceSnapshot(
+                cinemaId = PlanetQuickBookClient.DEFAULT_CINEMA_ID,
+                cinemaDate = (s.date ?: parsedHeaderDate).toString(),
+                inFirstUrl = true,
+                firstUrlRatio = baselineRatio?.toFloat(),
+                firstUrlPresentationId = s.presentationId,
+                firstUrlEnd = s.endStr.takeIf { it.isNotBlank() },
+                inHourlyUrl = hourlyItem != null,
+                hourlyUrlRatio = hourlyRatio?.toFloat(),
+                hourlyUrlPresentationId = hourlyItem?.resolvedPresentationId(),
+                hourlyUrlEnd = hourlyItem?.end?.takeIf { it.isNotBlank() },
+                inQuickBook = qbItem != null,
+                quickBookPresentationId = qbItem?.resolvedPresentationId(),
+                quickBookPresentationCode = qbItem?.presentationCode?.takeIf { it.isNotBlank() },
+                quickBookSoldOut = qbItem?.soldOut,
+                quickBookEnd = qbItem?.end?.takeIf { it.isNotBlank() }
+            )
+
+            s.copy(
+                presentationId = resolvedPid,
+                availabilityRatio = ratioFloat,
+                availabilityRatioDouble = chosenRatio,
+                occupancyPercentage = occPct,
+                estimatedPeople = estPeople,
+                crowdLevel = calculateCrowdLevelForRatio(ratioFloat),
+                availabilitySource = chosenSource,
+                seatFetchState = when {
+                    chosenRatio != null -> SeatFetchState.SUCCESS
+                    resolvedPid == null -> SeatFetchState.MISSING_PRESENTATION_ID
+                    else -> SeatFetchState.NONE
+                },
+                sourceSnapshot = trace
+            )
+        }
+
+        return ScheduleMergeResult(
+            cinemaDate = parsedHeaderDate,
+            screenings = merged,
+            recoveredMissingFromQuickBook = 0,
+            recoveredPidsFromQuickBook = recoveredPids
         )
     }
 
@@ -631,7 +892,9 @@ class CinemaRepository(
         nowMinutes: Int,
         defaultDate: LocalDate? = null,
         defaultSource: AvailabilitySource = AvailabilitySource.SCHEDULE_FEED,
-        nowZoned: ZonedDateTime? = null
+        nowZoned: ZonedDateTime? = null,
+        doubleRatiosByCode: Map<String, Double> = emptyMap(),
+        doubleRatiosBySlot: Map<String, Double> = emptyMap()
     ): List<Screening> {
         return rawList.mapNotNull { raw ->
             val startParsed = parseTime(raw.start) ?: return@mapNotNull null
@@ -639,8 +902,6 @@ class CinemaRepository(
 
             val roomNum = RoomType.extractRoomNumber(raw.room)
             val capacity = roomNum?.let { HALL_CAPACITIES[it] }
-            val hallCapInfo = getHallCapacityInfo(roomNum, fallbackOriginalCapacity = capacity)
-            val ratioCapacity = hallCapInfo.usableCapacity ?: capacity
             val roomType = RoomType.fromRoom(raw.room)
 
             val s = normalizeCinemaMinutes(startParsed)
@@ -649,22 +910,34 @@ class CinemaRepository(
 
             val entry = s - ENTRY_LEAD
 
-            val ratio = raw.availabilityRatio?.takeIf { it in 0.0f..1.0f }
-            val occupancyPct = if (ratio != null) {
-                ((1f - ratio) * 100f).roundToInt().coerceIn(0, 100)
+            val presCode = raw.presentationCode?.trim()?.takeIf { it.isNotEmpty() }
+            val slotKey = canonicalSlotKey(raw.room, raw.start, raw.title)
+            val doubleRatio = (presCode?.let { doubleRatiosByCode[it] }
+                ?: doubleRatiosBySlot[slotKey]
+                ?: raw.availabilityRatio?.toDouble())
+                ?.takeIf { it.isFinite() && it in 0.0..1.0 }
+            val ratio = doubleRatio?.toFloat()
+            val occupancyPct = if (doubleRatio != null) {
+                ((1.0 - doubleRatio) * 100.0).roundToInt().coerceIn(0, 100)
             } else 0
 
-            val estimatedPeople = if (ratioCapacity != null && ratio != null) {
-                (ratioCapacity * (1.0 - ratio.toDouble())).roundToInt().coerceIn(0, ratioCapacity)
-            } else null
+            val screeningDate = parseDateFlexible(raw.date) ?: defaultDate
+            val estimatedPeople = com.example.planetchecker.Screening(
+                room = raw.room.trim(),
+                start = raw.start.trim(),
+                end = raw.end.trim(),
+                title = raw.title.trim(),
+                date = screeningDate,
+                availabilityRatio = doubleRatio,
+                presentationCode = presCode
+            ).coreEstimatedOccupiedSeats()
 
             val crowdLevel = calculateCrowdLevelForRatio(ratio)
             val poster = posterCache[raw.title.replace(Regex("\\(.*?\\)"), "").trim()]
-            val screeningDate = parseDateFlexible(raw.date) ?: defaultDate
             val pid = raw.resolvedPresentationId()
-            val source = if (ratio == null) AvailabilitySource.NONE else defaultSource
+            val source = if (doubleRatio == null) AvailabilitySource.NONE else defaultSource
             val fetchState = when {
-                ratio != null -> SeatFetchState.SUCCESS
+                doubleRatio != null -> SeatFetchState.SUCCESS
                 pid == null -> SeatFetchState.MISSING_PRESENTATION_ID
                 else -> SeatFetchState.NONE
             }
@@ -688,13 +961,14 @@ class CinemaRepository(
                 crowdLevel = crowdLevel,
                 posterUrl = poster,
                 presentationId = pid,
-                presentationCode = raw.presentationCode?.trim()?.takeIf { it.isNotEmpty() },
+                presentationCode = presCode,
                 venueTypeId = raw.venueTypeId ?: 1,
                 date = screeningDate,
                 seatSummary = null,
                 availabilitySource = source,
                 seatFetchState = fetchState,
-                lastSeatUpdateEpochMs = null
+                lastSeatUpdateEpochMs = null,
+                availabilityRatioDouble = doubleRatio
             )
 
             if (nowZoned != null) {

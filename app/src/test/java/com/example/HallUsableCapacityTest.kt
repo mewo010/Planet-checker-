@@ -251,9 +251,9 @@ class HallUsableCapacityTest {
         val date = LocalDate.of(2026, 11, 12)
         val now = ZonedDateTime.of(2026, 11, 12, 20, 0, 0, 0, jerusalem)
 
-        // Hall 10: original 217, broken 3 -> usable 214. Sold out (0.0f) -> 214 (not 217)
-        // Hall 18: original 112, broken 3 -> usable 109. 0.50f -> 55 (round(109 * 0.5))
-        // Hall 9: original 88, broken 0 -> usable 88. 0.50f -> 44
+        // Hall 10: original 217, reserved 3 -> 0.0f => 214
+        // Hall 18: original 112, reserved 3 -> 0.50f => 53 (round(112 * 0.5) - 3)
+        // Hall 9: original 88, reserved 0 -> 0.50f => 44
         val raw = listOf(
             RawScreening("Show A", "אולם 10", "19:00", "21:30", 0.0f, presentationId = "s10"),
             RawScreening("Show B", "אולם 18", "19:15", "21:45", 0.50f, presentationId = "s18"),
@@ -263,12 +263,12 @@ class HallUsableCapacityTest {
 
         assertEquals(214, screenings[0].estimatedPeople)
         assertEquals(214, screenings[0].estimatedOccupiedSeats())
-        assertEquals(55, screenings[1].estimatedPeople)
-        assertEquals(55, screenings[1].estimatedOccupiedSeats())
+        assertEquals(53, screenings[1].estimatedPeople)
+        assertEquals(53, screenings[1].estimatedOccupiedSeats())
         assertEquals(44, screenings[2].estimatedPeople)
         assertEquals(44, screenings[2].estimatedOccupiedSeats())
 
-        // Hourly ratio override also uses usable capacity
+        // Hourly ratio override also uses APK formula
         val hourlyUpdated = mergeScreeningAvailability(
             screenings = listOf(screenings[0].copy(availabilityRatio = null, estimatedPeople = null, availabilitySource = AvailabilitySource.NONE)),
             scheduleRatiosByKey = mapOf(screenings[0].canonicalSlotKey() to 0.0f)
@@ -276,13 +276,13 @@ class HallUsableCapacityTest {
         assertEquals(214, hourlyUpdated[0].estimatedPeople)
         assertEquals(214, hourlyUpdated[0].estimatedOccupiedSeats())
 
-        // Deduplication merges also preserve usable-capacity ratio estimate
+        // Deduplication merges also preserve APK ratio estimate
         val duped = deduplicateScreenings(listOf(screenings[0], screenings[0].copy(id = "dup")))
         assertEquals(1, duped.size)
         assertEquals(214, duped[0].estimatedPeople)
 
         val occupancy = calculateCinemaOccupancy(screenings, now)
-        assertEquals(214 + 55 + 44, occupancy.occupiedSeats)
+        assertEquals(214 + 53 + 44, occupancy.occupiedSeats)
         assertEquals(0, occupancy.unknownBrokenSeatsScreenings)
     }
 

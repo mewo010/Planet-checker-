@@ -41,7 +41,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -152,34 +155,40 @@ fun CinemaDashboardScreen(
                         if (uiState.isLoading) {
                             LoadingDashboardState(modifier = Modifier.fillMaxSize())
                         } else {
-                            AnimatedContent(
-                                targetState = uiState.activeTab,
-                                transitionSpec = {
-                                    if (reducedMotion) {
-                                        fadeIn(PlanetMotion.standardTween(0, true)) togetherWith
-                                            fadeOut(PlanetMotion.standardTween(0, true))
-                                    } else {
-                                        val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-                                        (fadeIn(PlanetMotion.standardTween(PlanetMotion.mediumMs)) +
-                                            slideInHorizontally(PlanetMotion.standardTween(PlanetMotion.mediumMs)) {
-                                                direction * (it / 10)
-                                            }) togetherWith
-                                            (fadeOut(PlanetMotion.standardTween(PlanetMotion.fastMs)) +
-                                                slideOutHorizontally(PlanetMotion.standardTween(PlanetMotion.fastMs)) {
-                                                    -direction * (it / 10)
-                                                })
-                                    }
-                                },
-                                label = "tab_content_transition",
-                                modifier = Modifier
-                                    .fillMaxHeight()
-                                    .widthIn(max = 900.dp)
-                                    .fillMaxWidth()
-                            ) { activeTab ->
-                                val tabListState = rememberLazyListState()
-                                LazyColumn(
-                                    state = tabListState,
-                                    modifier = Modifier.fillMaxSize(),
+                            PullToRefreshBox(
+                                isRefreshing = uiState.isRefreshing,
+                                onRefresh = { viewModel.loadData(isUserInitiated = true) },
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                AnimatedContent(
+                                    targetState = uiState.activeTab,
+                                    transitionSpec = {
+                                        if (reducedMotion) {
+                                            fadeIn(PlanetMotion.standardTween(0, true)) togetherWith
+                                                fadeOut(PlanetMotion.standardTween(0, true))
+                                        } else {
+                                            val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                                            (fadeIn(PlanetMotion.standardTween(PlanetMotion.mediumMs)) +
+                                                slideInHorizontally(PlanetMotion.standardTween(PlanetMotion.mediumMs)) {
+                                                    direction * (it / 10)
+                                                }) togetherWith
+                                                (fadeOut(PlanetMotion.standardTween(PlanetMotion.fastMs)) +
+                                                    slideOutHorizontally(PlanetMotion.standardTween(PlanetMotion.fastMs)) {
+                                                        -direction * (it / 10)
+                                                    })
+                                        }
+                                    },
+                                    label = "tab_content_transition",
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .fillMaxHeight()
+                                        .widthIn(max = 900.dp)
+                                        .fillMaxWidth()
+                                ) { activeTab ->
+                                    val tabListState = rememberLazyListState()
+                                    LazyColumn(
+                                        state = tabListState,
+                                        modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(
                                         start = PlanetSpacing.md,
                                         end = PlanetSpacing.md,
@@ -329,9 +338,13 @@ fun CinemaDashboardScreen(
                                     }
                                 }
                             }
+                            }
                         }
 
                         uiState.selectedScreening?.let { screening ->
+                            val nowZoned = remember(uiState.currentIsraelTime, uiState.allScreenings) {
+                                ZonedDateTime.now(ZoneId.of("Asia/Jerusalem"))
+                            }
                             ScreeningDetailSheet(
                                 screening = screening,
                                 currentCinemaMinutes = uiState.currentCinemaMinutes,
@@ -344,7 +357,10 @@ fun CinemaDashboardScreen(
                                 },
                                 onOpenSeatMap = { target ->
                                     seatMapScreeningId = target.id
-                                }
+                                },
+                                isPinned = screening.stableKey() in uiState.pinnedScreeningKeys,
+                                onTogglePin = { viewModel.togglePinScreening(screening) },
+                                nextScreeningInRoom = screening.nextScreeningInSameRoom(uiState.allScreenings, nowZoned)
                             )
                         }
 

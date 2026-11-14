@@ -19,6 +19,7 @@ enum class SeatAvailabilityStatus {
 enum class AvailabilitySource(val hebrewLabel: String) {
     LIVE_SEAT_MAP("מפת מושבים חיה"),
     HOURLY_FEED("פיד עומסים שעתי"),
+    HISTORY_FEED("היסטוריית זמינות (Gist)"),
     SCHEDULE_FEED("פיד לוח הקרנות"),
     OFFICIAL_QUICKBOOK("לוח רשמי (Planet)"),
     SAMPLE_FALLBACK("נתוני דוגמה (אופליין)"),

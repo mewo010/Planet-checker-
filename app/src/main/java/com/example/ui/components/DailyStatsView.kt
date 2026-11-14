@@ -139,6 +139,14 @@ fun DailyStatsView(
 
         DailyMetricsGrid(stats = dailyStats)
 
+        if (dailyStats.audienceByFormat.isNotEmpty()) {
+            AudienceByFormatCard(stats = dailyStats.audienceByFormat)
+        }
+
+        if (dailyStats.movieStatsToday.isNotEmpty()) {
+            AudienceByMovieCard(movies = dailyStats.movieStatsToday)
+        }
+
         OccupancyTimelineChartCard(points = dailyStats.timelinePoints)
 
         if (dailyStats.monitoringGaps.isNotEmpty() || dailyStats.unknownCount > 0) {
@@ -343,23 +351,133 @@ private fun DailyMetricsGrid(stats: DailyStatisticsSummary) {
             horizontalArrangement = Arrangement.spacedBy(PlanetSpacing.sm)
         ) {
             StatMiniCard(
-                label = "אומדן כניסות להקרנות (כל היום)",
+                label = "קהל משוער היום",
                 value = stats.estimatedTotalAttendanceToday?.toString() ?: "לא ידוע",
-                subtitle = "כולל כפל צופים אפשרי (לא מבקרים ייחודיים)",
+                subtitle = "כל ההקרנות של היום (כולל עתידיות)",
                 valueColor = PlanetRoseLight,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
             )
             StatMiniCard(
-                label = "מושבים ידועים (תפוס / פנוי)",
-                value = "${stats.totalKnownOccupiedSeats ?: "?"} / ${stats.totalKnownAvailableSeats ?: "?"}",
-                subtitle = "מאומתים: ${stats.confirmedCount} | אומדנים: ${stats.estimatedCount} | לא ידוע: ${stats.unknownCount}",
+                label = if (stats.estimatedRemainingToday != null) "צופים בהקרנות עתידיות" else "מושבים ידועים (תפוס / פנוי)",
+                value = stats.estimatedRemainingToday?.toString()
+                    ?: "${stats.totalKnownOccupiedSeats ?: "?"} / ${stats.totalKnownAvailableSeats ?: "?"}",
+                subtitle = if (stats.estimatedRemainingToday != null) {
+                    "הקרנות היום שטרם החלו • ${stats.upcomingScreenings} הקרנות"
+                } else {
+                    "מאומתים: ${stats.confirmedCount} | אומדנים: ${stats.estimatedCount} | לא ידוע: ${stats.unknownCount}"
+                },
                 valueColor = PlanetImaxSkyLight,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
             )
+        }
+    }
+}
+
+@Composable
+private fun AudienceByFormatCard(stats: List<com.example.planetchecker.AudienceStat>) {
+    DashboardCard(contentPadding = PaddingValues(PlanetSpacing.lg)) {
+        Column(verticalArrangement = Arrangement.spacedBy(PlanetSpacing.sm)) {
+            Text(
+                text = "קהל לפי פורמט",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = PlanetTextPrimary
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                stats.forEach { item ->
+                    val formatColor = when (item.label) {
+                        "IMAX" -> RoomType.IMAX.badgeColor
+                        "VIP" -> RoomType.VIP.badgeColor
+                        "4DX" -> RoomType.FOUR_DX.badgeColor
+                        "ScreenX" -> RoomType.SCREEN_X.badgeColor
+                        else -> RoomType.TWO_D.badgeColor
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(PlanetRadius.md))
+                            .background(PlanetDarkBg.copy(alpha = 0.72f))
+                            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(PlanetRadius.md))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = formatColor
+                        )
+                        Text(
+                            text = "${item.people} צופים",
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = PlanetTextPrimary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudienceByMovieCard(movies: List<com.example.planetchecker.MovieAudienceStat>) {
+    DashboardCard(contentPadding = PaddingValues(PlanetSpacing.lg)) {
+        Column(verticalArrangement = Arrangement.spacedBy(PlanetSpacing.sm)) {
+            Text(
+                text = "קהל לפי סרט (${movies.size})",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = PlanetTextPrimary
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                movies.forEach { movie ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(PlanetRadius.md))
+                            .background(PlanetDarkBg.copy(alpha = 0.72f))
+                            .border(1.dp, PlanetBorderSubtle, RoundedCornerShape(PlanetRadius.md))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = movie.title,
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                ),
+                                color = PlanetTextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${movie.showings} הקרנות",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = PlanetTextMuted
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${movie.people} צופים",
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = PlanetRoseLight
+                        )
+                    }
+                }
+            }
         }
     }
 }

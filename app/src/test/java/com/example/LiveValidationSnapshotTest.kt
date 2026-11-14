@@ -190,9 +190,9 @@ class LiveValidationSnapshotTest {
 
         // Hall 7 verified: 6 occupied + 2 reserved = 8
         assertEquals(8, snapshot.verifiedOccupiedAndReservedSeats)
-        // Hall 5 ratio-estimated: HOURLY 0.30 on 398 usable cap (400 - 2 broken) = 279
-        assertEquals(279, snapshot.ratioEstimatedOccupancy)
-        assertEquals(287, snapshot.totalEstimatedOccupancy)
+        // Hall 5 ratio-estimated: HOURLY 0.30 on 400 cap minus 2 reserved = 278
+        assertEquals(278, snapshot.ratioEstimatedOccupancy)
+        assertEquals(286, snapshot.totalEstimatedOccupancy)
 
         // Section 1 & 2: Verify individual entries & explicit disagreements
         val h7 = snapshot.activeScreenings.first { it.roomNumber == 7 }
@@ -218,7 +218,7 @@ class LiveValidationSnapshotTest {
         assertEquals(398, h5.usableHallCapacity)
         assertTrue(h5.brokenSeatsKnown)
         assertEquals(4, h5.unknownSeats)
-        assertEquals(279, h5.estimatedOccupancy)
+        assertEquals(278, h5.estimatedOccupancy)
         assertEquals(OccupancyCountKind.RATIO_ESTIMATE.name, h5.occupancyKind)
         assertEquals(SourceFreshnessState.CACHED, h5.seatApiFreshness)
         assertTrue(h5.disagreements.any { it.field == "soldOut_vs_availabilityRatio" })

@@ -6,6 +6,13 @@ import com.example.data.diagnostics.ScreeningSourceSnapshot
 import com.example.data.diagnostics.SourceTelemetryBundle
 import com.example.data.repository.CinemaRepository
 import com.example.data.repository.SeatFetchResult
+import com.example.planetchecker.AudienceStat
+import com.example.planetchecker.MovieAudienceStat
+import com.example.planetchecker.displayEndTime as coreDisplayEndTime
+import com.example.planetchecker.estimatedOccupiedSeats as coreEstimatedOccupiedSeats
+import com.example.planetchecker.nextScreeningInSameRoom as coreNextScreeningInSameRoom
+import com.example.planetchecker.reservedSeats as coreReservedSeats
+import com.example.planetchecker.stableKey as coreStableKey
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import java.time.LocalDate
@@ -229,7 +236,8 @@ data class Screening(
     val seatFetchError: String? = null,
     val lastSeatUpdateEpochMs: Long? = null,
     val seatApiFromCache: Boolean = false,
-    val sourceSnapshot: ScreeningSourceSnapshot? = null
+    val sourceSnapshot: ScreeningSourceSnapshot? = null,
+    val availabilityRatioDouble: Double? = null
 ) {
     val progress: Float
         get() = if (status == ScreeningStatus.LIVE) {
@@ -325,38 +333,68 @@ data class Screening(
         return manualBroken > 0 && alreadyExcluded >= manualBroken
     }
 
+    fun effectiveAvailabilityDouble(): Double? =
+        (availabilityRatioDouble ?: availabilityRatio?.toDouble())
+            ?.takeIf { it.isFinite() && it in 0.0..1.0 }
+
+    fun toCoreScreening(): com.example.planetchecker.Screening =
+        com.example.planetchecker.Screening(
+            room = room,
+            start = startStr,
+            end = endStr,
+            title = title,
+            date = date,
+            availabilityRatio = effectiveAvailabilityDouble(),
+            presentationCode = presentationCode?.trim()?.takeIf { it.isNotEmpty() }
+        )
+
+    fun stableKey(): String = toCoreScreening().coreStableKey()
+
+    fun displayEndTime(): String = toCoreScreening().coreDisplayEndTime()
+
+    fun reservedSeats(): Int = toCoreScreening().coreReservedSeats()
+
+    fun nextScreeningInSameRoom(screenings: List<Screening>, now: ZonedDateTime): Screening? {
+        val coreList = screenings.map { it.toCoreScreening() }
+        val match = toCoreScreening().coreNextScreeningInSameRoom(coreList, now) ?: return null
+        return screenings.firstOrNull {
+            it.room == match.room &&
+                it.startStr == match.start &&
+                it.endStr == match.end &&
+                it.title == match.title &&
+                it.date == match.date
+        }
+    }
+
     /**
-     * Capacity used for ratio-based occupancy estimation: prefers usable capacity when known,
-     * falling back to original capacity only when broken-seat count is unknown (never mutating usableHallCapacity to non-null).
+     * Capacity used for ratio-based occupancy estimation (matches original official room capacity).
      */
-    fun effectiveRatioCapacity(): Int? = usableHallCapacity() ?: roomCapacity()
+    fun effectiveRatioCapacity(): Int? = originalHallCapacity() ?: roomCapacity()
 
     fun occupancyCountKind(): OccupancyCountKind {
         val summary = seatSummary
         if (summary != null && summary.totalValidSeats > 0 && summary.availabilityRatio != null) {
             return OccupancyCountKind.VERIFIED_SEAT_MAP
         }
-        val ratio = availabilityRatio?.toDouble()?.takeIf { it in 0.0..1.0 }
-        val cap = effectiveRatioCapacity()
-        if (ratio != null && cap != null) {
+        val coreEst = toCoreScreening().coreEstimatedOccupiedSeats()
+        if (coreEst != null) {
             return OccupancyCountKind.RATIO_ESTIMATE
         }
         return OccupancyCountKind.UNKNOWN
     }
 
     /**
-     * Estimates occupied seats cleanly without fabricating numbers for unknown states.
-     * Prefers actual parsed occupied + reserved seat count from seats-statusV2 when verified,
-     * and uses usable capacity for ratio-based occupancy estimates when known.
+     * Estimates occupied seats:
+     * - Uses verified live seat map counts when statuses are verified against Planet's UI.
+     * - Otherwise delegates 1:1 to the reconstructed APK formula:
+     *   round(roomCapacity * (1.0 - availabilityRatio)) - reservedSeats
      */
     fun estimatedOccupiedSeats(): Int? {
         val summary = seatSummary
         if (summary != null && summary.totalValidSeats > 0 && summary.availabilityRatio != null) {
             return summary.occupiedAndReservedSeats.coerceIn(0, summary.totalValidSeats)
         }
-        val ratio = availabilityRatio?.toDouble()?.takeIf { it in 0.0..1.0 } ?: return null
-        val cap = effectiveRatioCapacity() ?: return null
-        return ((cap * (1.0 - ratio)).roundToInt()).coerceIn(0, cap)
+        return toCoreScreening().coreEstimatedOccupiedSeats()
     }
 
     /**
@@ -518,7 +556,8 @@ private fun mergeDuplicateScreeningPair(a: Screening, b: Screening): Screening {
     val resolvedPid = primary.presentationId ?: secondary.presentationId
     val resolvedCode = primary.presentationCode ?: secondary.presentationCode
     val resolvedSummary = primary.seatSummary ?: secondary.seatSummary
-    val resolvedRatio = primary.availabilityRatio ?: secondary.availabilityRatio
+    val resolvedRatioDouble = primary.effectiveAvailabilityDouble() ?: secondary.effectiveAvailabilityDouble()
+    val resolvedRatio = resolvedRatioDouble?.toFloat()
     val hasVerifiedSummary = resolvedSummary != null &&
         resolvedSummary.availabilityRatio != null &&
         !resolvedSummary.hasUnverifiedStatuses &&
@@ -531,13 +570,13 @@ private fun mergeDuplicateScreeningPair(a: Screening, b: Screening): Screening {
     val ratioCap = if (hasVerifiedSummary) {
         resolvedCap
     } else {
-        primary.usableHallCapacity() ?: secondary.usableHallCapacity() ?: resolvedCap
+        primary.originalHallCapacity() ?: secondary.originalHallCapacity() ?: resolvedCap
     }
     val resolvedEstPeople = when {
         resolvedSummary != null && resolvedSummary.totalValidSeats > 0 && resolvedSummary.availabilityRatio != null ->
             resolvedSummary.occupiedAndReservedSeats
-        resolvedRatio != null && ratioCap != null ->
-            (ratioCap * (1.0 - resolvedRatio.toDouble())).roundToInt().coerceIn(0, ratioCap)
+        resolvedRatioDouble != null && ratioCap != null ->
+            (ratioCap * (1.0 - resolvedRatioDouble)).roundToInt() - primary.reservedSeats()
         else -> null
     }
 
@@ -549,9 +588,10 @@ private fun mergeDuplicateScreeningPair(a: Screening, b: Screening): Screening {
         seatSummary = resolvedSummary,
         capacity = resolvedCap,
         availabilityRatio = resolvedRatio,
+        availabilityRatioDouble = resolvedRatioDouble,
         estimatedPeople = resolvedEstPeople,
-        occupancyPercentage = if (resolvedRatio != null) {
-            ((1.0 - resolvedRatio.toDouble()) * 100.0).roundToInt().coerceIn(0, 100)
+        occupancyPercentage = if (resolvedRatioDouble != null) {
+            ((1.0 - resolvedRatioDouble) * 100.0).roundToInt().coerceIn(0, 100)
         } else 0,
         crowdLevel = calculateCrowdLevelForRatio(resolvedRatio),
         posterUrl = primary.posterUrl ?: secondary.posterUrl,
@@ -595,8 +635,9 @@ private fun mergeSourceSnapshots(
 }
 
 private fun sourcePriority(source: AvailabilitySource): Int = when (source) {
-    AvailabilitySource.LIVE_SEAT_MAP -> 6
-    AvailabilitySource.HOURLY_FEED -> 5
+    AvailabilitySource.LIVE_SEAT_MAP -> 7
+    AvailabilitySource.HOURLY_FEED -> 6
+    AvailabilitySource.HISTORY_FEED -> 5
     AvailabilitySource.OFFICIAL_QUICKBOOK -> 4
     AvailabilitySource.SCHEDULE_FEED -> 3
     AvailabilitySource.SAMPLE_FALLBACK -> 2
@@ -875,23 +916,24 @@ fun mergeScreeningAvailability(
                 } else {
                     // Seat statuses are unverified/UNKNOWN in live response: attach raw summary honestly
                     // WITHOUT shrinking hall capacity or overwriting known schedule estimate with null.
-                    val fallbackRatio = screening.availabilityRatio?.takeIf { it in 0f..1f } ?: hourlyRatio
-                    val ratioCap = screening.usableHallCapacity() ?: effectiveCapacity
-                    val recalcEst = if (fallbackRatio != null && ratioCap != null) {
-                        (ratioCap * (1.0 - fallbackRatio.toDouble())).roundToInt()
-                            .coerceIn(0, ratioCap)
+                    val fallbackDouble = screening.effectiveAvailabilityDouble() ?: hourlyRatio?.toDouble()
+                    val fallbackRatio = fallbackDouble?.toFloat()
+                    val ratioCap = screening.originalHallCapacity() ?: effectiveCapacity
+                    val recalcEst = if (fallbackDouble != null && ratioCap != null) {
+                        (ratioCap * (1.0 - fallbackDouble)).roundToInt() - screening.reservedSeats()
                     } else null
-                    val pct = if (fallbackRatio != null) {
-                        ((1.0 - fallbackRatio.toDouble()) * 100.0).roundToInt().coerceIn(0, 100)
+                    val pct = if (fallbackDouble != null) {
+                        ((1.0 - fallbackDouble) * 100.0).roundToInt().coerceIn(0, 100)
                     } else 0
                     val source = when {
-                        screening.availabilityRatio != null -> screening.availabilitySource
+                        screening.effectiveAvailabilityDouble() != null -> screening.availabilitySource
                         hourlyRatio != null -> AvailabilitySource.HOURLY_FEED
                         else -> AvailabilitySource.NONE
                     }
                     screening.copy(
                         capacity = effectiveCapacity,
                         availabilityRatio = fallbackRatio,
+                        availabilityRatioDouble = fallbackDouble,
                         occupancyPercentage = pct,
                         estimatedPeople = recalcEst,
                         crowdLevel = calculateCrowdLevelForRatio(fallbackRatio),
@@ -968,15 +1010,19 @@ fun mergeScreeningAvailability(
             }
 
             hourlyRatio != null -> {
+                val hourlyDouble = hourlyRatio.toDouble()
                 val ratioCap = screening.effectiveRatioCapacity() ?: screening.roomCapacity()
-                val occPct = ((1f - hourlyRatio) * 100f).roundToInt().coerceIn(0, 100)
-                val estPeople = if (ratioCap != null) (ratioCap * (1.0 - hourlyRatio.toDouble())).roundToInt().coerceIn(0, ratioCap) else null
+                val occPct = ((1.0 - hourlyDouble) * 100.0).roundToInt().coerceIn(0, 100)
+                val estPeople = if (ratioCap != null) {
+                    (ratioCap * (1.0 - hourlyDouble)).roundToInt() - screening.reservedSeats()
+                } else null
                 val updatedTrace = (screening.sourceSnapshot ?: ScreeningSourceSnapshot(cinemaDate = screening.date?.toString())).copy(
                     inHourlyUrl = true,
                     hourlyUrlRatio = screening.sourceSnapshot?.hourlyUrlRatio ?: hourlyRatio
                 )
                 screening.copy(
                     availabilityRatio = hourlyRatio,
+                    availabilityRatioDouble = hourlyDouble,
                     occupancyPercentage = occPct,
                     estimatedPeople = estPeople,
                     crowdLevel = calculateCrowdLevelForRatio(hourlyRatio),
@@ -1092,7 +1138,10 @@ data class DailyStatisticsSummary(
     val unknownCount: Int = 0,
     val timelinePoints: List<DailyTimelinePoint> = emptyList(),
     val monitoringGaps: List<MonitoringGapInfo> = emptyList(),
-    val screeningBreakdowns: List<DailyScreeningBreakdownItem> = emptyList()
+    val screeningBreakdowns: List<DailyScreeningBreakdownItem> = emptyList(),
+    val estimatedRemainingToday: Int? = null,
+    val audienceByFormat: List<AudienceStat> = emptyList(),
+    val movieStatsToday: List<MovieAudienceStat> = emptyList()
 )
 
 data class CinemaUiState(
@@ -1129,7 +1178,8 @@ data class CinemaUiState(
     val dailyStats: DailyStatisticsSummary? = null,
     val sourceTelemetry: SourceTelemetryBundle = SourceTelemetryBundle(),
     val latestValidationSnapshot: LiveOccupancyValidationSnapshot? = null,
-    val latestValidationJsonPath: String? = null
+    val latestValidationJsonPath: String? = null,
+    val pinnedScreeningKeys: Set<String> = emptySet()
 )
 
 enum class SortOption(val title: String) {
